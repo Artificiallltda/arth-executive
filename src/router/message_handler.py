@@ -79,7 +79,7 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
             
     except Exception as e:
         logger.error(f"Erro no execute_brain: {e}", exc_info=True)
-        return "Ops, a Squad Executiva teve uma falha t\u00e9cnica ao coordenar essa tarefa."
+        return f"Ops, a Squad Executiva teve uma falha t\u00e9cnica: {str(e)}"
 
 # --- WEBHOOKS ---
 
