@@ -43,7 +43,7 @@ async def execute_reminder(reminder_id: str, user_id: str, channel: str, message
     Função executada pelo APScheduler no momento exato agendado.
     """
     try:
-        from src.core.graph import build_arth_graph
+        from src.core.engine import engine
         from langchain_core.messages import HumanMessage
         from src.router.message_handler import send_telegram_message, send_whatsapp_message
         
@@ -56,7 +56,7 @@ async def execute_reminder(reminder_id: str, user_id: str, channel: str, message
             f"NÃO diga que agendou o lembrete, pois ele já estava agendado e agora é o momento da execução."
         )
         
-        brain = build_arth_graph()
+        brain = await engine.get_brain()
         initial = {
             'messages': [HumanMessage(content=prompt)],
             'user_id': user_id,
@@ -65,8 +65,14 @@ async def execute_reminder(reminder_id: str, user_id: str, channel: str, message
         config = {'configurable': {'thread_id': f"{channel}_{user_id}"}}
         
         # Pede pro modelo gerar a mensagem de aviso (isso acontece em background)
-        final = await brain.ainvoke(initial, config=config)
-        ai_response = final['messages'][-1].content
+        # Note: ainvoke no grafo compilado retorna o estado final
+        final_state = await brain.ainvoke(initial, config=config)
+        ai_response = "Lembrete: " + message # Fallback
+        
+        for m in reversed(final_state.get("messages", [])):
+            if m.type == "ai" and m.content:
+                ai_response = m.content
+                break
         
         # Envia pelo canal certo
         if channel == "whatsapp":

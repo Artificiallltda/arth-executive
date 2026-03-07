@@ -21,8 +21,8 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", status_callback=None, user_name: str = "User", media_data: dict = None):
-    """Função core para rodar o raciocínio com persistência de estado e HITL real."""
-    logger.info(f"[{channel.upper()}] Processando mensagem de {user_name} ({user_id})")
+    """Função core para rodar o raciocínio com bypass de HITL injetado."""
+    logger.info(f"[{channel.upper()}] Mensagem: {text[:50]}...")
     
     config = {
         "configurable": {"thread_id": f"{channel}_{user_id}", "user_name": user_name},
@@ -33,66 +33,60 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
         brain = await engine.get_brain()
         state = await brain.aget_state(config)
         
-        approval_keywords = ["sim", "ok", "pode", "pode ir", "autorizado", "vai", "autorizo", "autorizada", "concordo", "fechado"]
+        approval_keywords = ["sim", "ok", "pode", "pode ir", "autorizado", "vai", "autorizo", "autorizada", "concordo", "fechado", "pode executar"]
         is_approval = any(word in text.lower().strip() for word in approval_keywords)
 
-        # --- LÓGICA HITL CORRIGIDA ---
+        # --- RECOVERY / HITL BYPASS ---
+        # Se estamos num breakpoint E o usuário disse 'Sim'
         if state.next and "arth_approval" in state.next and is_approval:
-            logger.info(f"[{channel.upper()}] HITL: Injetando aprovação no histórico e retomando...")
-            if status_callback: await status_callback("Aprovação registrada. Executando agora! 🚀⚙️")
+            logger.info(f"[HITL] Injetando aprovação manual para {user_id}")
+            if status_callback: await status_callback("Autorização confirmada. Executando agora! 🚀")
             
-            # 1. ATUALIZA O ESTADO: Injeta a mensagem do usuário no checkpoint antes de retomar
-            # Isso garante que o Orchestrator veja o "Sim" no histórico.
-            await brain.aupdate_state(config, {"messages": [HumanMessage(content=text)]})
+            # Injetamos o estado 'approved' manualmente para o supervisor ver
+            await brain.aupdate_state(config, {"approval_status": "approved", "messages": [HumanMessage(content=text)]})
             
-            # 2. RETOMA: Inicia de onde parou (None indica continuação do checkpoint)
+            # Retomamos o grafo enviando None (continuar do checkpoint)
             async for event in brain.astream(None, config=config):
-                for node, _ in event.items():
-                    logger.debug(f"[Grafo] Executando nó: {node}")
+                pass
         else:
-            # Caso Normal: Nova tarefa ou o usuário disse outra coisa
-            content = text
-            if media_data and "b64" in media_data:
-                content = [{"type": "text", "text": text}, {"type": "text", "text": "[SISTEMA: Mídia enviada]"}]
-
-            initial_state = {"messages": [HumanMessage(content=content)], "user_id": str(user_id)}
+            # Caso normal ou dúvida nova
+            initial_state = {
+                "messages": [HumanMessage(content=text)],
+                "user_id": str(user_id),
+                "approval_status": "none"
+            }
             
             sent_etas = set()
             async for event in brain.astream(initial_state, config=config):
                 for node, _ in event.items():
                     status_messages = {
-                        "arth_researcher": "Pesquisando dados... 🔍⏳",
-                        "arth_executor": "Executando tarefas... 💻⏳",
-                        "arth_planner": "Criando plano... 📋⏳",
-                        "arth_analyst": "Analisando... 📊⏳",
-                        "arth_qa": "Revisando qualidade... 🛡️⏳"
+                        "arth_researcher": "Pesquisando... 🔍",
+                        "arth_executor": "Executando... 💻",
+                        "arth_planner": "Planejando... 📋",
+                        "arth_analyst": "Analisando... 📊",
+                        "arth_qa": "Revisando... 🛡️"
                     }
                     if node in status_messages and node not in sent_etas:
                         if status_callback: await status_callback(status_messages[node])
                         sent_etas.add(node)
 
-        # Captura o estado final para resposta
+        # Resposta Final
         final_state = await brain.aget_state(config)
         
-        # Verifica se caiu em um novo ponto de aprovação
         if final_state.next and "arth_approval" in final_state.next:
-            return (
-                "[⚠️ Ação Crítica] Esta tarefa exige execução de comandos.\n\n"
-                "**Você autoriza o Arth a prosseguir?** (Responda 'Sim' ou 'Ok')"
-            )
+            return "[⚠️ Ação Crítica] Esta tarefa exige execução de comandos.\n\n**Você autoriza o Arth a prosseguir?** (Responda 'Sim' ou 'Ok')"
 
-        # Pega a última mensagem AI
         for m in reversed(final_state.values.get("messages", [])):
             if m.type == "ai" and m.content:
                 return m.content
         
-        return "Tarefa concluída, Comandante. O que mais posso fazer?"
+        return "Concluído conforme solicitado."
 
     except Exception as e:
-        logger.error(f"Erro no execute_brain: {e}", exc_info=True)
+        logger.error(f"Erro: {e}", exc_info=True)
         return f"Ops, tive uma falha técnica executiva: {str(e)}"
 
-# --- WEBHOOKS (Minimizados para clareza) ---
+# --- WEBHOOKS (Simplified) ---
 
 @router.post("/whatsapp/webhook")
 async def receive_whatsapp(request: Request, background_tasks: BackgroundTasks):

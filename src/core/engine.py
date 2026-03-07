@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 
 class ArthEngine:
     """
-    Gerenciador do Ciclo de Vida do Grafo (C\u00e9rebro).
-    Cuida da persist\u00eancia ass\u00edncrona e compila\u00e7\u00e3o do grafo.
+    Gerenciador do Ciclo de Vida do Grafo (Cérebro).
+    Cuida da persistência assíncrona e compilação do grafo.
     """
     _instance = None
     _brain = None
@@ -24,33 +24,37 @@ class ArthEngine:
         if self._brain is None:
             workflow = build_arth_graph()
             
-            # Se j\u00e1 veio compilado (fallback de mem\u00f3ria no graph.py)
+            # Se já veio compilado (fallback de memória no graph.py)
             if hasattr(workflow, "astream"):
                 self._brain = workflow
                 return self._brain
 
-            # Caso contr\u00e1rio, configuramos a persist\u00eancia profissional
+            # Configurações padrão de compilação (HITL Ativado)
+            compile_kwargs = {
+                "interrupt_before": ["arth_approval"]
+            }
+
+            # Caso contrário, configuramos a persistência profissional
             if settings.SUPABASE_DATABASE_URL:
                 try:
-                    logger.info("[\u2611\uFE0F] Conectando ao Supabase/Postgres para persist\u00eancia...")
+                    logger.info("[☑️] Conectando ao Supabase/Postgres para persistência...")
                     conn = await AsyncConnection.connect(
                         settings.SUPABASE_DATABASE_URL,
                         autocommit=True,
                         prepare_threshold=None
                     )
                     checkpointer = AsyncPostgresSaver(conn)
-                    await checkpointer.setup() # Cria tabelas se necess\u00e1rio
-                    
-                    self._brain = workflow.compile(
-                        checkpointer=checkpointer,
-                        interrupt_before=["arth_approval"]
-                    )
+                    await checkpointer.setup() # Cria tabelas se necessário
+                    compile_kwargs["checkpointer"] = checkpointer
                 except Exception as e:
-                    logger.error(f"[\u274C] Falha ao conectar no Postgres: {e}. Usando MemorySaver.")
-                    self._brain = workflow.compile(checkpointer=MemorySaver())
+                    logger.error(f"[❌] Falha ao conectar no Postgres: {e}. Usando MemorySaver.")
+                    compile_kwargs["checkpointer"] = MemorySaver()
             else:
-                logger.warning("[!] SUPABASE_DATABASE_URL n\u00e3o configurada. Usando MemorySaver (vol\u00e1til).")
-                self._brain = workflow.compile(checkpointer=MemorySaver())
+                logger.warning("[!] SUPABASE_DATABASE_URL não configurada. Usando MemorySaver (volátil).")
+                compile_kwargs["checkpointer"] = MemorySaver()
+            
+            # Compila com as configurações definidas
+            self._brain = workflow.compile(**compile_kwargs)
         
         return self._brain
 
