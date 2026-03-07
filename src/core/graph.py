@@ -141,6 +141,10 @@ async def supervisor_node(state: AgentState):
         routing_result.requires_approval = False
         if routing_result.next_agent == "arth_approval":
             routing_result.next_agent = "arth_executor"
+    
+    # Telemetria para Logs do Railway
+    logger.info(f"[ROUTER] Decisão: {routing_result.next_agent} | Approval: {routing_result.requires_approval} | StateApproved: {is_approved}")
+    print(f"\n>>> [ARTH ROUTER] De: arth_orchestrator | Para: {routing_result.next_agent} | ApprovalReq: {routing_result.requires_approval}\n")
 
     # --- LÓGICA DE FINALIZAÇÃO (Preserva Mídias e Evita Hallucinação) ---
     if routing_result.next_agent == "FINISH":
@@ -166,7 +170,16 @@ async def supervisor_node(state: AgentState):
             "messages": [AIMessage(content=content, name="arth_orchestrator")]
         }
         
-    return {"next_agent": routing_result.next_agent, "approval_status": "none" if not is_approved else "approved"}
+    # Reseta o status de aprovação assim que saímos para um especialista para evitar loops
+    new_approval_status = "none"
+    if routing_result.next_agent == "arth_approval":
+        new_approval_status = "none" # Ainda não aprovado
+    elif is_approved and routing_result.next_agent in members:
+        new_approval_status = "consumed" # Marca como já usado
+    elif is_approved:
+        new_approval_status = "approved"
+
+    return {"next_agent": routing_result.next_agent, "approval_status": new_approval_status}
 
 async def approval_node(state: AgentState):
     return {
