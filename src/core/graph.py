@@ -66,8 +66,11 @@ executor_agent = create_specialist_agent(EXECUTOR_TOOLS, load_persona("executor.
 qa_agent = create_specialist_agent(QA_TOOLS, load_persona("qa.md"))
 analyst_agent = create_specialist_agent(ANALYST_TOOLS, load_persona("analyst.md"))
 
-def agent_node(state, agent, name):
-    result = agent.invoke(state, {"recursion_limit": 25})
+# Função Helper para rodar o sub-agente de forma assíncrona
+async def agent_node(state, agent, name):
+    # Aumentamos o limite interno de recursão para o sub-agente
+    # NOVO: Usamos ainvoke para suportar StructuredTools
+    result = await agent.ainvoke(state, {"recursion_limit": 25})
     last_msg = result["messages"][-1]
     return {
         "messages": [AIMessage(content=last_msg.content, name=name)],
@@ -106,7 +109,7 @@ prompt = ChatPromptTemplate.from_messages([
 
 supervisor_chain = prompt | llm_with_fallbacks.with_structured_output(RouteResponse)
 
-def supervisor_node(state: AgentState):
+async def supervisor_node(state: AgentState):
     logger.info(f"[Orquestrador] Gerenciando fluxo para: {state.get('sender', 'user')}")
     
     is_approved = state.get("approval_status") == "approved"
@@ -117,7 +120,7 @@ def supervisor_node(state: AgentState):
         logger.info("[HITL] Aprovação confirmada no estado.")
         messages.append(SystemMessage(content="SISTEMA: O usuário já AUTORIZOU esta ação. Prossiga para a execução IMEDIATAMENTE."))
 
-    routing_result = supervisor_chain.invoke({**state, "messages": messages})
+    routing_result = await supervisor_chain.ainvoke({**state, "messages": messages})
 
     # BYPASS GOD MODE: Se já foi aprovado, bloqueamos o loop de aprovação
     if is_approved and (routing_result.requires_approval or routing_result.next_agent == "arth_approval"):
