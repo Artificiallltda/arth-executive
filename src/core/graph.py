@@ -37,7 +37,7 @@ gemini_llm = ChatGoogleGenerativeAI(
 # Define quem entra primeiro no ringue
 if settings.PRIMARY_MODEL == "gemini":
     logger = logging.getLogger(__name__) # Ensure logger exists or use print
-    print("[\ud83d\ude80] Usando Gemini como motor principal.")
+    print("[OK] Usando Gemini como motor principal.")
     llm_with_fallbacks = gemini_llm.with_fallbacks([openai_llm])
 else:
     llm_with_fallbacks = openai_llm.with_fallbacks([gemini_llm])
