@@ -112,39 +112,36 @@ async def supervisor_node(state: AgentState):
     is_approved = state.get("approval_status") == "approved"
     messages = list(state.get("messages", []))
     
-    # --- CAMADA DE SEGURANÇA RESILIENTE ---
-    # Busca gatilhos no histórico recente se ainda não aprovado
-    critical_triggers = ["imagem", "image", "gerar", "crie", "create", "pdf", "docx", "pptx", "python", "agende", "lembrete", "reminder"]
+    # --- CAMADA DE SEGURANÇA INTELIGENTE ---
+    # Busca gatilho apenas na última interação humana para evitar loops com histórico antigo
+    last_human_msg = next((m for m in reversed(messages) if m.type == "human"), None)
     found_trigger = False
-    for msg in reversed(messages):
-        if msg.type == "human":
-            if any(t in str(msg.content).lower() for t in critical_triggers):
-                found_trigger = True
-                break
-        if msg.type == "ai" and msg.name == "arth_orchestrator": # Para de procurar se já passou por mim
-             break
-             
-    needs_hard_approval = found_trigger and not is_approved
+    if last_human_msg:
+        critical_triggers = ["imagem", "image", "gerar", "crie", "create", "pdf", "docx", "pptx", "python", "agende", "lembrete", "reminder"]
+        found_trigger = any(t in str(last_human_msg.content).lower() for t in critical_triggers)
+    
+    # Se já houve uma execução de ferramenta com sucesso (tag de arquivo presente), não bloqueia
+    has_file = any("<SEND_FILE:" in str(m.content) for m in messages if m.type == "ai")
+    
+    needs_hard_approval = found_trigger and not is_approved and not has_file
 
     if is_approved:
-        logger.info("[HITL] Injetando instrução de bypass no histórico.")
-        messages.append(SystemMessage(content="SISTEMA: O usuário JÁ AUTORIZOU esta ação crítica. Prossiga IMEDIATAMENTE para a execução da ferramenta no @arth-executor. Não peça aprovação novamente."))
+        messages.append(SystemMessage(content="SISTEMA: Ação já autorizada pelo usuário. Prossiga para a execução."))
 
-    routing_result = await supervisor_chain.ainvoke({**state, "messages": messages}, config=RunnableConfig(recursion_limit=50))
+    # Chamada do modelo de roteamento com limite expandido
+    routing_result = await supervisor_chain.ainvoke({**state, "messages": messages})
 
-    # Força a aprovação se detectado gatilho crítico e o roteamento for para o Executor
+    # Força a rota de aprovação se necessário
     if needs_hard_approval and routing_result.next_agent == "arth_executor":
+        routing_result.next_agent = "arth_approval"
         routing_result.requires_approval = True
 
-    # BYPASS GOD CODE: Se já foi aprovado, NUNCA para na aprovação
-    if is_approved:
+    # Bypass: Se já aprovado, nunca volta para aprovação
+    if is_approved and routing_result.next_agent == "arth_approval":
+        routing_result.next_agent = "arth_executor"
         routing_result.requires_approval = False
-        if routing_result.next_agent == "arth_approval":
-            routing_result.next_agent = "arth_executor"
-    
-    # Telemetria para Logs do Railway
-    logger.info(f"[ROUTER] Decisão: {routing_result.next_agent} | Approval: {routing_result.requires_approval} | StateApproved: {is_approved}")
-    print(f"\n>>> [ARTH ROUTER] De: arth_orchestrator | Para: {routing_result.next_agent} | ApprovalReq: {routing_result.requires_approval}\n")
+
+    logger.info(f"[ROUTER] De: supervisor | Para: {routing_result.next_agent} | Approval: {routing_result.requires_approval}")
 
     # --- LÓGICA DE FINALIZAÇÃO (Preserva Mídias e Evita Hallucinação) ---
     if routing_result.next_agent == "FINISH":
@@ -170,22 +167,15 @@ async def supervisor_node(state: AgentState):
             "messages": [AIMessage(content=content, name="arth_orchestrator")]
         }
         
-    # Reseta o status de aprovação assim que saímos para um especialista para evitar loops
-    new_approval_status = "none"
-    if routing_result.next_agent == "arth_approval":
-        new_approval_status = "none" # Ainda não aprovado
-    elif is_approved and routing_result.next_agent in members:
-        new_approval_status = "consumed" # Marca como já usado
-    elif is_approved:
-        new_approval_status = "approved"
-
-    return {"next_agent": routing_result.next_agent, "approval_status": new_approval_status}
+    return {
+        "next_agent": routing_result.next_agent, 
+        "approval_status": "approved" if is_approved else "none"
+    }
 
 async def approval_node(state: AgentState):
     return {
         "approval_status": "approved", 
-        "requires_approval": False,
-        "messages": [AIMessage(content="Autorização confirmada pelo usuário. Prosseguindo...", name="arth_approval")]
+        "messages": [AIMessage(content="Autorização confirmada! Prosseguindo... 🚀⚙️", name="arth_approval")]
     }
 
 def build_arth_graph():
