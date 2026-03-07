@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     # Pasta de saídas de dados
     DATA_OUTPUTS_PATH: str = os.path.join(BASE_DIR, "data", "outputs")
-    # Pasta das Personas (Skins) - Tenta localizar na raiz do GeanAIOS se não estiver no local padrão
-    SQUAD_PATH: str = os.getenv("SQUAD_PATH", os.path.join(os.path.dirname(BASE_DIR), "squads", "arth-executive-squad-v1", "agents"))
+    # Pasta das Personas (Skins) - Localizada dentro de src/agents
+    SQUAD_PATH: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents")
 
     # --- MODELS ---
     OPENAI_MODEL: str = "gpt-4o-mini"
