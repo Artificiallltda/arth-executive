@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     SQUAD_PATH: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents")
 
     # --- MODELS ---
+    PRIMARY_MODEL: str = os.getenv("PRIMARY_MODEL", "openai") # 'openai' ou 'gemini'
     OPENAI_MODEL: str = "gpt-4o-mini"
     GEMINI_MODEL: str = "gemini-2.0-flash" # Estável e performático
     

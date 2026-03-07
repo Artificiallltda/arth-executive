@@ -26,14 +26,20 @@ from src.tools.rag_tools import query_knowledge_base, upload_document_to_knowled
 from src.config import settings
 
 # --- Setup dos Modelos (Orquestrador + Personas) ---
-llm = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0)
+openai_llm = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0)
 gemini_llm = ChatGoogleGenerativeAI(
     model=settings.GEMINI_MODEL,
     google_api_key=settings.GEMINI_API_KEY, 
     temperature=0
 )
-# O usuário mencionou Gemini 3 Flash, mas no código vamos garantir fallbacks robustos
-llm_with_fallbacks = llm.with_fallbacks([gemini_llm])
+
+# Define quem entra primeiro no ringue
+if settings.PRIMARY_MODEL == "gemini":
+    logger = logging.getLogger(__name__) # Ensure logger exists or use print
+    print("[\ud83d\ude80] Usando Gemini como motor principal.")
+    llm_with_fallbacks = gemini_llm.with_fallbacks([openai_llm])
+else:
+    llm_with_fallbacks = openai_llm.with_fallbacks([gemini_llm])
 
 # --- Carregamento de Personas (AIOS Ecosystem) ---
 def load_persona(agent_filename: str) -> str:
