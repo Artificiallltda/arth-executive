@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import Literal
+from typing import Literal, Optional, List
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from pydantic import BaseModel

@@ -8,7 +8,7 @@ from src.config import settings
 from src.core.engine import engine
 from src.router.adapters.whatsapp import process_whatsapp_reply, send_whatsapp_message
 from src.router.adapters.telegram import process_telegram_reply, send_telegram_message
-from src.router.adapters.instagram import process_instagram_reply
+from src.router.adapters.instagram import process_instagram_reply, send_instagram_message
 from src.utils.audio_transcriber import transcribe_audio_file
 import os
 import uuid
@@ -21,11 +21,13 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", status_callback=None, user_name: str = "User", media_data: dict = None):
-    """Função core INTEGRAL: Texto, Áudio, Imagem e HITL."""
-    logger.info(f"[{channel.upper()}] Processando: {text[:50]}... (Media: {bool(media_data)})")
+    """Motor de raciocínio integral com restauração de funcionalidades."""
+    logger.info(f"[{channel.upper()}] Processando mensagem de {user_name} ({user_id})")
     
-    # Contexto de mídia (Base64)
-    media_b64 = media_data.get("b64") if media_data else None
+    # Captura contexto de mídia (Ex: base64 da imagem enviada)
+    media_b64 = None
+    if media_data and "b64" in media_data:
+        media_b64 = media_data["b64"]
 
     config = {
         "configurable": {"thread_id": f"{channel}_{user_id}", "user_name": user_name},
@@ -36,30 +38,29 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
         brain = await engine.get_brain()
         state = await brain.aget_state(config)
         
-        # Lógica de Aprovação
+        # Lógica de Aprovação (HITL)
         approval_keywords = ["sim", "ok", "pode", "pode ir", "autorizado", "vai", "autorizo", "fechado"]
         is_approval = any(word in text.lower().strip() for word in approval_keywords)
 
-        # --- FLUXO HITL (RETOMADA) ---
+        # --- RETOMADA POR APROVAÇÃO ---
         if state.next and "arth_approval" in state.next and is_approval:
             logger.info(f"[HITL] Retomando execução aprovada para {user_id}")
-            if status_callback: await status_callback("Aprovação recebida! Executando tarefa crítica... 🚀⚙️")
+            if status_callback: await status_callback("Aprovação confirmada! Prosseguindo... 🚀⚙️")
             
-            # Atualiza o estado com o sinal de aprovação e a mensagem
+            # Atualiza o estado para marcar como aprovado e continua
             await brain.aupdate_state(config, {"approval_status": "approved", "messages": [HumanMessage(content=text)]})
             
-            # Retoma o stream (input None sinaliza continuação do checkpoint)
             async for event in brain.astream(None, config=config):
                 for node, _ in event.items():
-                    logger.debug(f"[Grafo] Executando: {node}")
+                    logger.debug(f"[Grafo] Executando nó: {node}")
         
-        # --- FLUXO NORMAL (NOVO CICLO) ---
+        # --- NOVO CICLO DE MENSAGEM ---
         else:
             content = text
             if media_b64:
                 content = [
                     {"type": "text", "text": text},
-                    {"type": "text", "text": "[SISTEMA: O Usuário enviou mídia de referência. Use-a se necessário.]"}
+                    {"type": "text", "text": f"\n[SISTEMA: O Usuário enviou mídia de referência. Use-a se necessário.]"}
                 ]
 
             initial_state = {
@@ -72,8 +73,8 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
             
             sent_etas = set()
             async for event in brain.astream(initial_state, config=config):
-                for node, _ in event.items():
-                    # RESTAURAÇÃO DAS ETAS (Status Messages)
+                for node, state_update in event.items():
+                    # RESTAURAÇÃO DAS ETAS
                     status_messages = {
                         "arth_researcher": "Pesquisando dados relevantes... 🔍⏳",
                         "arth_executor": "Executando ferramentas e gerando artefatos... 💻⏳",
@@ -84,29 +85,28 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
                     if node in status_messages and node not in sent_etas:
                         if status_callback: await status_callback(status_messages[node])
                         sent_etas.add(node)
-
-        # CAPTURA DO RESULTADO FINAL
+        
+        # RESULTADO FINAL
         final_state = await brain.aget_state(config)
         
-        # Interrupção para aprovação
         if final_state.next and "arth_approval" in final_state.next:
             return (
                 "[⚠️ Ação Crítica] Esta tarefa exige execução de comandos ou agendamentos.\n\n"
                 "**Você autoriza o Arth a prosseguir?** (Responda 'Sim' ou 'Ok')"
             )
 
-        # Retorna a última mensagem AI do histórico
-        for m in reversed(final_state.values.get("messages", [])):
+        # Busca a resposta da IA no histórico
+        for m in reversed(final_state.values["messages"]):
             if m.type == "ai" and m.content:
                 return m.content
         
-        return "Tarefa concluída com sucesso, Comandante."
-
+        return "Tarefa concluída com sucesso."
+            
     except Exception as e:
         logger.error(f"Erro no execute_brain: {e}", exc_info=True)
         return f"Ops, a Squad Executiva teve uma falha técnica: {str(e)}"
 
-# --- WEBHOOKS RESTAURADOS (ÁUDIO + IMAGEM) ---
+# --- WEBHOOKS RESTAURADOS ---
 
 @router.post("/whatsapp/webhook")
 async def receive_whatsapp(request: Request, background_tasks: BackgroundTasks):
@@ -128,9 +128,9 @@ async def receive_whatsapp(request: Request, background_tasks: BackgroundTasks):
         
     async def run_pipeline():
         final_text = text
-        media_context = {"b64": media_b64} if media_b64 and not audio_msg else None
+        media_context = None
         
-        # RESTAURAÇÃO DA TRANSCRIÇÃO DE ÁUDIO
+        # RESTAURAÇÃO: Trata áudio ou prepara contexto de imagem
         if audio_msg and media_b64:
             await status_callback("Ouvindo seu áudio... 🎧⏳")
             temp_path = os.path.join(settings.DATA_OUTPUTS_PATH, f"in_{uuid.uuid4().hex[:8]}.ogg")
@@ -139,14 +139,15 @@ async def receive_whatsapp(request: Request, background_tasks: BackgroundTasks):
                     f.write(base64.b64decode(media_b64))
                 transcription = await transcribe_audio_file(temp_path)
                 final_text = transcription
-                logger.info(f"[Áudio WhatsApp] Transcrição: {final_text}")
-                final_text += "\n[SISTEMA: Mensagem enviada por áudio. Você pode responder com áudio]."
+                final_text += "\n[SISTEMA: Enviado por áudio.]"
             except Exception as e:
-                logger.error(f"Erro transcrição: {e}")
+                logger.error(f"Erro áudio: {e}")
             finally:
                 if os.path.exists(temp_path): os.remove(temp_path)
-        
-        if not final_text: return
+        elif media_b64:
+            media_context = {"b64": media_b64}
+
+        if not final_text and not media_context: return
         
         response = await execute_brain(
             user_id=remote_jid, 
