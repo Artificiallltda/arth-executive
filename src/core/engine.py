@@ -10,10 +10,11 @@ logger = logging.getLogger(__name__)
 class ArthEngine:
     """
     Gerenciador do Ciclo de Vida do Grafo (Cérebro).
-    Cuida da persistência assíncrona e compilação do grafo.
+    Implementa Singleton e persistência resiliente.
     """
     _instance = None
     _brain = None
+    _conn = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -24,38 +25,39 @@ class ArthEngine:
         if self._brain is None:
             workflow = build_arth_graph()
             
-            # Se já veio compilado (fallback de memória no graph.py)
-            if hasattr(workflow, "astream"):
-                self._brain = workflow
-                return self._brain
-
-            # Configurações padrão de compilação (HITL Ativado)
-            compile_kwargs = {
-                "interrupt_before": ["arth_approval"]
-            }
-
-            # Caso contrário, configuramos a persistência profissional
+            # Persistência Profissional (Supabase / Postgres)
             if settings.SUPABASE_DATABASE_URL:
                 try:
-                    logger.info("[☑️] Conectando ao Supabase/Postgres para persistência...")
-                    conn = await AsyncConnection.connect(
-                        settings.SUPABASE_DATABASE_URL,
-                        autocommit=True,
-                        prepare_threshold=None
+                    logger.info("[DB] Conectando ao Supabase para persistência estável...")
+                    # Mantemos uma conexão persistente para evitar erros de ResourceWarning
+                    if self._conn is None or self._conn.closed:
+                        self._conn = await AsyncConnection.connect(
+                            settings.SUPABASE_DATABASE_URL,
+                            autocommit=True,
+                            prepare_threshold=None
+                        )
+                    
+                    checkpointer = AsyncPostgresSaver(self._conn)
+                    await checkpointer.setup()
+                    
+                    self._brain = workflow.compile(
+                        checkpointer=checkpointer,
+                        interrupt_before=["arth_approval"]
                     )
-                    checkpointer = AsyncPostgresSaver(conn)
-                    await checkpointer.setup() # Cria tabelas se necessário
-                    compile_kwargs["checkpointer"] = checkpointer
+                    logger.info("[OK] Cérebro compilado com Persistência Cloud.")
                 except Exception as e:
-                    logger.error(f"[❌] Falha ao conectar no Postgres: {e}. Usando MemorySaver.")
-                    compile_kwargs["checkpointer"] = MemorySaver()
+                    logger.error(f"[FAIL] Erro no Supabase: {e}. Usando memória local.")
+                    self._brain = workflow.compile(checkpointer=MemorySaver())
             else:
-                logger.warning("[!] SUPABASE_DATABASE_URL não configurada. Usando MemorySaver (volátil).")
-                compile_kwargs["checkpointer"] = MemorySaver()
-            
-            # Compila com as configurações definidas
-            self._brain = workflow.compile(**compile_kwargs)
+                logger.warning("[!] Usando MemorySaver (volátil).")
+                self._brain = workflow.compile(checkpointer=MemorySaver())
         
         return self._brain
+
+    async def cleanup(self):
+        """Fecha conexões ao encerrar o servidor."""
+        if self._conn and not self._conn.closed:
+            await self._conn.close()
+            logger.info("[DB] Conexão com Supabase encerrada graciosamente.")
 
 engine = ArthEngine()

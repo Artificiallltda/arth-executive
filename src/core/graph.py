@@ -8,7 +8,6 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import create_react_agent
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langgraph.checkpoint.memory import MemorySaver
 
 from src.core.state import AgentState
 from src.tools.basic_tools import get_current_time
@@ -28,7 +27,7 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
-# --- Setup dos Modelos (Orquestrador + Personas) ---
+# --- Setup dos Modelos ---
 openai_llm = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0)
 gemini_llm = ChatGoogleGenerativeAI(
     model=settings.GEMINI_MODEL,
@@ -36,10 +35,7 @@ gemini_llm = ChatGoogleGenerativeAI(
     temperature=0
 )
 
-if settings.PRIMARY_MODEL == "gemini":
-    llm_with_fallbacks = gemini_llm.with_fallbacks([openai_llm])
-else:
-    llm_with_fallbacks = openai_llm.with_fallbacks([gemini_llm])
+llm_with_fallbacks = openai_llm.with_fallbacks([gemini_llm]) if settings.PRIMARY_MODEL != "gemini" else gemini_llm.with_fallbacks([openai_llm])
 
 # --- Carregamento de Personas ---
 def load_persona(agent_filename: str) -> str:
@@ -50,40 +46,41 @@ def load_persona(agent_filename: str) -> str:
     except FileNotFoundError:
         return f"Você é o agente {agent_filename}. Atue com profissionalismo."
 
-# --- Divisão de Tools ---
-RESEARCHER_TOOLS = [search_web, search_memory, save_memory, query_knowledge_base]
-PLANNER_TOOLS = [get_current_time, search_memory, save_memory, analyze_data_file]
-EXECUTOR_TOOLS = [execute_python_code, generate_docx, generate_pdf, generate_image, generate_pptx, generate_audio, schedule_reminder, ask_chefia, audit_supabase_security, audit_database_schema, search_memory, save_memory, upload_document_to_knowledge_base]
-QA_TOOLS = [search_memory, save_memory]
-ANALYST_TOOLS = [analyze_data_file, audit_supabase_security, audit_database_schema, search_memory, save_memory]
+# --- Ferramentas ---
+ALL_TOOLS = [
+    get_current_time, search_web, generate_docx, generate_pdf, 
+    execute_python_code, save_memory, search_memory, ask_chefia, 
+    generate_image, analyze_data_file, schedule_reminder, 
+    generate_pptx, audit_supabase_security, audit_database_schema, 
+    generate_audio, query_knowledge_base, upload_document_to_knowledge_base
+]
 
+# --- Criação dos Agentes Especialistas ---
+# NOVO: Forçamos o uso do loop de ferramenta assíncrono
 def create_specialist_agent(tools, system_prompt: str):
     return create_react_agent(model=llm_with_fallbacks, tools=tools, prompt=system_prompt)
 
-researcher_agent = create_specialist_agent(RESEARCHER_TOOLS, load_persona("researcher.md"))
-planner_agent = create_specialist_agent(PLANNER_TOOLS, load_persona("planner.md"))
-executor_agent = create_specialist_agent(EXECUTOR_TOOLS, load_persona("executor.md"))
-qa_agent = create_specialist_agent(QA_TOOLS, load_persona("qa.md"))
-analyst_agent = create_specialist_agent(ANALYST_TOOLS, load_persona("analyst.md"))
+researcher_agent = create_specialist_agent([search_web, search_memory, save_memory, query_knowledge_base], load_persona("researcher.md"))
+planner_agent = create_specialist_agent([get_current_time, search_memory, save_memory, analyze_data_file], load_persona("planner.md"))
+executor_agent = create_specialist_agent(ALL_TOOLS, load_persona("executor.md")) # Executor tem acesso a tudo
+qa_agent = create_specialist_agent([search_memory, save_memory], load_persona("qa.md"))
+analyst_agent = create_specialist_agent([analyze_data_file, audit_supabase_security, audit_database_schema, search_memory, save_memory], load_persona("analyst.md"))
 
-# Função Helper para rodar o sub-agente de forma assíncrona
 async def agent_node(state, agent, name):
-    # Aumentamos o limite interno de recursão para o sub-agente
-    # NOVO: Usamos ainvoke para suportar StructuredTools
+    # Execução assíncrona mandatória para evitar erro de StructuredTool
     result = await agent.ainvoke(state, {"recursion_limit": 25})
-    last_msg = result["messages"][-1]
     return {
-        "messages": [AIMessage(content=last_msg.content, name=name)],
+        "messages": [AIMessage(content=result["messages"][-1].content, name=name)],
         "sender": name
     }
 
-def researcher_node(state): return agent_node(state, researcher_agent, "arth_researcher")
-def planner_node(state): return agent_node(state, planner_agent, "arth_planner")
-def executor_node(state): return agent_node(state, executor_agent, "arth_executor")
-def qa_node(state): return agent_node(state, qa_agent, "arth_qa")
-def analyst_node(state): return agent_node(state, analyst_agent, "arth_analyst")
+async def researcher_node(state): return await agent_node(state, researcher_agent, "arth_researcher")
+async def planner_node(state): return await agent_node(state, planner_agent, "arth_planner")
+async def executor_node(state): return await agent_node(state, executor_agent, "arth_executor")
+async def qa_node(state): return await agent_node(state, qa_agent, "arth_qa")
+async def analyst_node(state): return await agent_node(state, analyst_agent, "arth_analyst")
 
-# --- Orquestrador (Supervisor Node) ---
+# --- Orquestrador (Supervisor) ---
 members = ["arth_researcher", "arth_planner", "arth_executor", "arth_qa", "arth_analyst"]
 options = ["FINISH", "arth_approval"] + members
 
@@ -93,66 +90,44 @@ class RouteResponse(BaseModel):
     requires_approval: bool = False
 
 orchestrator_persona = load_persona("orchestrator.md")
-system_prompt = (
-    f"{orchestrator_persona}\n\n"
-    "3. SEGURANÇA: Se o próximo passo envolver EXECUÇÃO DE CÓDIGO (Python) ou AGENDAMENTOS/CALENDÁRIO, defina requires_approval=True.\n"
-    "   -> REGRA DE OURO: Se você estiver prestes a enviar para o @arth-executor pela PRIMEIRA VEZ para uma dessas tarefas, VOCÊ DEVE pedir aprovação primeiro.\n"
-    "   -> EXCEÇÃO: Se o histórico mostrar que VOCÊ JÁ PERGUNTOU e o usuário deu OK, defina requires_approval=False.\n"
-    "4. SEMPRE passe pelo @arth-qa se houver arquivos gerados."
-)
-
 prompt = ChatPromptTemplate.from_messages([
-    ("system", system_prompt),
+    ("system", orchestrator_persona),
     MessagesPlaceholder(variable_name="messages"),
-    ("system", "Quem deve atuar agora? Escolha um de: {options}"),
+    ("system", "Quem deve atuar agora? Escolha um de: {options}. Se for algo crítico que exija aprovação do Comandante, defina requires_approval=True."),
 ]).partial(options=str(options), members=", ".join(members))
 
 supervisor_chain = prompt | llm_with_fallbacks.with_structured_output(RouteResponse)
 
 async def supervisor_node(state: AgentState):
-    logger.info(f"[Orquestrador] Gerenciando fluxo para: {state.get('sender', 'user')}")
-    
     is_approved = state.get("approval_status") == "approved"
-    update_data = {}
     messages = list(state.get("messages", []))
     
     if is_approved:
-        logger.info("[HITL] Aprovação confirmada no estado.")
-        messages.append(SystemMessage(content="SISTEMA: O usuário já AUTORIZOU esta ação. Prossiga para a execução IMEDIATAMENTE."))
+        messages.append(SystemMessage(content="SISTEMA: O usuário JÁ AUTORIZOU esta ação. Vá direto para a execução sem perguntar novamente."))
 
     routing_result = await supervisor_chain.ainvoke({**state, "messages": messages})
 
-    # BYPASS GOD MODE: Se já foi aprovado, bloqueamos o loop de aprovação
-    if is_approved and (routing_result.requires_approval or routing_result.next_agent == "arth_approval"):
-        logger.warning("[FORCE] Ignorando flag de aprovação redundante.")
+    # TRAVA GOD MODE: Se o estado diz aprovado, ignoramos qualquer medo da LLM
+    if is_approved:
         routing_result.requires_approval = False
         if routing_result.next_agent == "arth_approval":
-            routing_result.next_agent = "arth_executor" # Destino mais comum
-        update_data["approval_status"] = "none" # Reset apenas após o uso
+            routing_result.next_agent = "arth_executor"
 
     if routing_result.next_agent == "FINISH":
-        content = routing_result.final_answer or "Processo concluído."
-        return {**update_data, "next_agent": "FINISH", "messages": [AIMessage(content=content, name="arth_orchestrator")]}
+        return {"next_agent": "FINISH", "messages": [AIMessage(content=routing_result.final_answer or "Pronto.", name="arth_orchestrator")]}
     
     if routing_result.requires_approval:
-        content = "[⚠️ Ação Crítica] Esta tarefa exige execução de comandos.\n\n**Você autoriza o Arth a prosseguir?** (Responda 'Sim' ou 'Ok')"
         return {
-            **update_data,
             "next_agent": "arth_approval", 
             "requires_approval": True,
-            "messages": [AIMessage(content=content, name="arth_orchestrator")]
+            "approval_status": "pending"
         }
         
-    return {**update_data, "next_agent": routing_result.next_agent}
+    return {"next_agent": routing_result.next_agent, "approval_status": "none" if not is_approved else "approved"}
 
-def approval_node(state: AgentState):
-    return {
-        "approval_status": "approved",
-        "requires_approval": False,
-        "messages": [AIMessage(content="Aprovado pelo usuário. Prosseguindo...", name="arth_approval")]
-    }
+async def approval_node(state: AgentState):
+    return {"approval_status": "approved", "requires_approval": False}
 
-# --- Montagem do Grafo ---
 def build_arth_graph():
     workflow = StateGraph(AgentState)
     workflow.add_node("arth_orchestrator", supervisor_node)
@@ -173,5 +148,4 @@ def build_arth_graph():
         lambda state: state["next_agent"],
         {k: k for k in members} | {"FINISH": END, "arth_approval": "arth_approval"}
     )
-    
     return workflow
