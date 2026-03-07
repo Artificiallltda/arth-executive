@@ -8,6 +8,7 @@ from src.config import settings
 from src.core.engine import engine
 from src.router.adapters.whatsapp import process_whatsapp_reply, send_whatsapp_message
 from src.router.adapters.telegram import process_telegram_reply, send_telegram_message
+from src.router.adapters.instagram import process_instagram_reply, send_instagram_message
 from src.utils.audio_transcriber import transcribe_audio_file
 import os
 import uuid
@@ -148,6 +149,36 @@ async def receive_telegram(request: Request, background_tasks: BackgroundTasks):
     async def run_pipeline():
         response = await execute_brain(user_id=chat_id, text=text, channel="telegram", status_callback=status_callback, user_name=user_name)
         await process_telegram_reply(chat_id, response)
+
+    background_tasks.add_task(run_pipeline)
+    return {"status": "queued"}
+
+@router.post("/instagram/webhook")
+async def receive_instagram(request: Request, background_tasks: BackgroundTasks):
+    """Webhook dedicado para Instagram (via Evolution API)."""
+    data = await request.json()
+    logger.info(f"[INSTAGRAM Webhook] Payload recebido")
+    
+    event = data.get("event")
+    if event != "messages.upsert": return {"status": "ignored"}
+    
+    message_data = data.get("data", {})
+    message = message_data.get("message", {})
+    
+    remote_jid = message_data.get("key", {}).get("remoteJid")
+    push_name = message_data.get("pushName", "Usuário")
+    
+    # Extrai o texto da mensagem (Instagram v2 costuma vir em conversation ou extendedTextMessage)
+    text = message.get("conversation") or message.get("extendedTextMessage", {}).get("text")
+    
+    if not text or not remote_jid: return {"status": "ignored"}
+
+    async def status_callback(msg: str):
+        await send_instagram_message(remote_jid, f"_{msg}_")
+        
+    async def run_pipeline():
+        response = await execute_brain(user_id=remote_jid, text=text, channel="instagram", status_callback=status_callback, user_name=push_name)
+        await process_instagram_reply(remote_jid, response)
 
     background_tasks.add_task(run_pipeline)
     return {"status": "queued"}
