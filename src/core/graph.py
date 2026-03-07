@@ -136,10 +136,11 @@ async def supervisor_node(state: AgentState):
         routing_result.next_agent = "arth_approval"
         routing_result.requires_approval = True
 
-    # Bypass: Se já aprovado, nunca volta para aprovação
-    if is_approved and routing_result.next_agent == "arth_approval":
-        routing_result.next_agent = "arth_executor"
+    # Bypass Absoluto: Se já aprovado, nunca mais pede aprovação nesta thread
+    if is_approved:
         routing_result.requires_approval = False
+        if routing_result.next_agent == "arth_approval":
+            routing_result.next_agent = "arth_executor"
 
     logger.info(f"[ROUTER] De: supervisor | Para: {routing_result.next_agent} | Approval: {routing_result.requires_approval}")
 
@@ -150,11 +151,12 @@ async def supervisor_node(state: AgentState):
         
         if last_specialist_msg and any(tag in str(last_specialist_msg.content) for tag in ["<SEND_FILE:", "<SEND_AUDIO:"]):
             logger.info(f"[Supervisor] Finalizando com mídia detectada em {last_specialist_msg.name}")
-            return {"next_agent": "FINISH"}
+            return {"next_agent": "FINISH", "requires_approval": False}
         
         return {
             "next_agent": "FINISH", 
-            "messages": [AIMessage(content=routing_result.final_answer or "Tarefa concluída com sucesso.", name="arth_orchestrator")]
+            "requires_approval": False,
+            "messages": [AIMessage(content=routing_result.final_answer or "Tarefa concluída.", name="arth_orchestrator")]
         }
     
     # --- ROTA DE APROVAÇÃO ---
@@ -169,12 +171,14 @@ async def supervisor_node(state: AgentState):
         
     return {
         "next_agent": routing_result.next_agent, 
+        "requires_approval": False, # Reset obrigatório
         "approval_status": "approved" if is_approved else "none"
     }
 
 async def approval_node(state: AgentState):
     return {
         "approval_status": "approved", 
+        "requires_approval": False, # Fundamental para quebrar o loop
         "messages": [AIMessage(content="Autorização confirmada! Prosseguindo... 🚀⚙️", name="arth_approval")]
     }
 
