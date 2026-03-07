@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # --- MODELS ---
     PRIMARY_MODEL: str = os.getenv("PRIMARY_MODEL", "openai") # 'openai' ou 'gemini'
     OPENAI_MODEL: str = "gpt-4o-mini"
-    GEMINI_MODEL: str = "gemini-2.0-flash" # Estável e performático
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash") # Estável e performático
     
     # --- KEYS ---
     OPENAI_API_KEY: str = ""
