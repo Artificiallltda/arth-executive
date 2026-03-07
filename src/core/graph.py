@@ -68,9 +68,20 @@ qa_agent = create_specialist_agent([search_memory, save_memory], load_persona("q
 analyst_agent = create_specialist_agent([analyze_data_file, audit_supabase_security, audit_database_schema, search_memory, save_memory], load_persona("analyst.md"))
 
 async def agent_node(state, agent, name):
-    # Execução assíncrona mandatória
-    result = await agent.ainvoke(state, {"recursion_limit": 25})
-    # IMPORTANTE: Retornamos a última mensagem sem alteração para preservar links de mídias/arquivos
+    messages = list(state.get("messages", []))
+
+    # Injeta contexto de canal/usuário para ferramentas que precisam (ex: schedule_reminder)
+    user_id = state.get("user_id", "")
+    channel = state.get("channel", "")
+    if user_id and channel:
+        messages = [SystemMessage(
+            content=(
+                f"[CONTEXTO DE SISTEMA]: Canal ativo='{channel}', user_id='{user_id}'. "
+                f"Use esses valores EXATOS ao chamar ferramentas que exigem user_id ou channel."
+            )
+        )] + messages
+
+    result = await agent.ainvoke({**state, "messages": messages}, RunnableConfig(recursion_limit=25))
     msg = result["messages"][-1]
     msg.name = name
     return {

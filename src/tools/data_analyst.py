@@ -36,13 +36,19 @@ async def analyze_data_file(instruction: str, data_string: str) -> str:
             return "Erro: O conjunto de dados fornecido est\u00e1 vazio."
 
         # Executar o c\u00f3digo em um ambiente restrito
+        safe_builtins = {
+            "print": print, "len": len, "range": range, "enumerate": enumerate,
+            "zip": zip, "list": list, "dict": dict, "str": str, "int": int,
+            "float": float, "bool": bool, "round": round, "sum": sum,
+            "min": min, "max": max, "abs": abs, "sorted": sorted, "type": type,
+        }
         local_scope = {'df': df, 'pd': pd, 'plt': plt, 'output_path': filepath}
         output_buffer = io.StringIO()
-        
+
         # Como o exec \u00e9 s\u00edncrono, rodamos no executor de thread para n\u00e3o travar o loop de eventos
         def _execute_analysis():
             with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(output_buffer):
-                exec(instruction, {}, local_scope)
+                exec(instruction, {"__builtins__": safe_builtins}, local_scope)
 
         await asyncio.to_thread(_execute_analysis)
         

@@ -1,8 +1,9 @@
 import os
 import psycopg
+from psycopg import AsyncConnection
 from typing import Dict, Any, List
 
-def run_rls_audit(db_url: str) -> Dict[str, Any]:
+async def run_rls_audit(db_url: str) -> Dict[str, Any]:
     """
     Executa uma auditoria completa de Row Level Security (RLS) no Supabase.
     Retorna um resumo de tabelas com e sem RLS habilitado.
@@ -12,10 +13,9 @@ def run_rls_audit(db_url: str) -> Dict[str, Any]:
         "tables": [],
         "summary": {}
     }
-    
-    with psycopg.connect(db_url) as conn:
-        with conn.cursor() as cur:
-            # 1. Tabelas com/sem RLS e suas políticas
+
+    async with await AsyncConnection.connect(db_url) as conn:
+        async with conn.cursor() as cur:
             sql_coverage = """
             WITH t AS (
               SELECT tablename, rowsecurity
@@ -29,14 +29,14 @@ def run_rls_audit(db_url: str) -> Dict[str, Any]:
                 'cmd', cmd,
                 'roles', roles
               ))
-               FROM pg_policies p 
-               WHERE p.tablename=t.tablename 
+               FROM pg_policies p
+               WHERE p.tablename=t.tablename
                AND p.schemaname='public') AS policies
             FROM t
             ORDER BY rowsecurity DESC, tablename;
             """
-            cur.execute(sql_coverage)
-            rows = cur.fetchall()
+            await cur.execute(sql_coverage)
+            rows = await cur.fetchall()
             for row in rows:
                 table_name, row_security, policies = row
                 audit_results["tables"].append({
@@ -44,41 +44,39 @@ def run_rls_audit(db_url: str) -> Dict[str, Any]:
                     "rls_enabled": row_security,
                     "policies": policies or []
                 })
-            
-            # 2. Resumo Quantitativo
+
             sql_summary = """
-            SELECT 
+            SELECT
               COUNT(*) AS total,
               COUNT(*) FILTER (WHERE rowsecurity) AS enabled,
               COUNT(*) FILTER (WHERE NOT rowsecurity) AS disabled
-            FROM pg_tables 
+            FROM pg_tables
             WHERE schemaname='public';
             """
-            cur.execute(sql_summary)
-            summary_row = cur.fetchone()
+            await cur.execute(sql_summary)
+            summary_row = await cur.fetchone()
             if summary_row:
                 audit_results["summary"] = {
                     "total_tables": summary_row[0],
                     "rls_enabled": summary_row[1],
                     "rls_disabled": summary_row[2]
                 }
-            
+
     return audit_results
 
-def run_schema_audit(db_url: str) -> Dict[str, Any]:
+async def run_schema_audit(db_url: str) -> Dict[str, Any]:
     """
     Executa uma auditoria de qualidade do esquema do banco de dados.
-    Verifica chaves primárias ausentes e chaves estrangeiras sem índices.
+    Verifica chaves primárias ausentes e timestamps ausentes.
     """
     issues = {
         "missing_pks": [],
         "missing_fk_indexes": [],
         "missing_timestamps": []
     }
-    
-    with psycopg.connect(db_url) as conn:
-        with conn.cursor() as cur:
-            # Check 1: Tabelas sem Primary Key
+
+    async with await AsyncConnection.connect(db_url) as conn:
+        async with conn.cursor() as cur:
             sql_no_pk = """
             SELECT table_name
             FROM information_schema.tables t
@@ -92,10 +90,9 @@ def run_schema_audit(db_url: str) -> Dict[str, Any]:
                   AND constraint_type = 'PRIMARY KEY'
               );
             """
-            cur.execute(sql_no_pk)
-            issues["missing_pks"] = [r[0] for r in cur.fetchall()]
-            
-            # Check 2: Tabelas sem timestamps (created_at)
+            await cur.execute(sql_no_pk)
+            issues["missing_pks"] = [r[0] for r in await cur.fetchall()]
+
             sql_no_ts = """
             SELECT table_name
             FROM information_schema.tables t
@@ -109,7 +106,7 @@ def run_schema_audit(db_url: str) -> Dict[str, Any]:
                   AND column_name IN ('created_at', 'createdat')
               );
             """
-            cur.execute(sql_no_ts)
-            issues["missing_timestamps"] = [r[0] for r in cur.fetchall()]
-            
+            await cur.execute(sql_no_ts)
+            issues["missing_timestamps"] = [r[0] for r in await cur.fetchall()]
+
     return issues

@@ -5,15 +5,20 @@ from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
 from src.config import settings
 
-# Inicializa o banco vetorial local (SQLite)
-# Ele vai criar uma pasta "chroma_db" dentro de "data"
 PERSIST_DIRECTORY = os.path.join(os.getcwd(), "data", "chroma_db")
-embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-vector_store = Chroma(
-    collection_name="arth_long_term_memory",
-    embedding_function=embeddings,
-    persist_directory=PERSIST_DIRECTORY
-)
+_vector_store = None
+
+def _get_vector_store() -> Chroma:
+    """Lazy init: cria o Chroma apenas na primeira chamada real."""
+    global _vector_store
+    if _vector_store is None:
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+        _vector_store = Chroma(
+            collection_name="arth_long_term_memory",
+            embedding_function=embeddings,
+            persist_directory=PERSIST_DIRECTORY
+        )
+    return _vector_store
 
 @tool
 def save_memory(fact: str, context: str = "", agent_id: str = "global") -> str:
@@ -27,7 +32,7 @@ def save_memory(fact: str, context: str = "", agent_id: str = "global") -> str:
     """
     try:
         doc = f"FATO: {fact}\nCONTEXTO: {context}"
-        vector_store.add_texts([doc], metadatas=[{"agent": agent_id}])
+        _get_vector_store().add_texts([doc], metadatas=[{"agent": agent_id}])
         return f"Memória salva com sucesso: '{fact}' pelo agente '{agent_id}'"
     except Exception as e:
         return f"Erro ao salvar na memória: {str(e)}"
@@ -43,7 +48,7 @@ def search_memory(query: str, n_results: int = 3, filter_agent: Optional[str] = 
     """
     try:
         filter_kwargs = {"filter": {"agent": filter_agent}} if filter_agent else {}
-        results = vector_store.similarity_search(query, k=n_results, **filter_kwargs)
+        results = _get_vector_store().similarity_search(query, k=n_results, **filter_kwargs)
         if not results:
             return f"Nenhuma memória encontrada para: {query}"
             

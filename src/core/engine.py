@@ -22,6 +22,15 @@ class ArthEngine:
         return cls._instance
 
     async def get_brain(self):
+        # Health-check: se a conexão DB morreu, reconstrói o brain com nova conexão
+        if self._brain is not None and self._conn is not None:
+            try:
+                await self._conn.execute("SELECT 1")
+            except Exception:
+                logger.warning("[DB] Conexão perdida detectada. Reconstruindo brain com nova conexão...")
+                self._brain = None
+                self._conn = None
+
         if self._brain is None:
             workflow = build_arth_graph()
             

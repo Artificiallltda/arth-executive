@@ -55,8 +55,9 @@ async def generate_pptx(slides_content_json: str) -> str:
         _apply_dark_theme(slide)
         title_shape = slide.shapes.title
         title_shape.text = presentation_title
-        if title_shape.text_frame.paragraphs:
-            _style_run(title_shape.text_frame.paragraphs[0].runs[0], size_pt=54, bold=True, rgb=ACCENT_COLOR)
+        paras = title_shape.text_frame.paragraphs
+        if paras and paras[0].runs:
+            _style_run(paras[0].runs[0], size_pt=54, bold=True, rgb=ACCENT_COLOR)
 
         # SLIDES
         for slide_data in slides:
@@ -65,8 +66,9 @@ async def generate_pptx(slides_content_json: str) -> str:
             
             title_shape = slide.shapes.title
             title_shape.text = slide_data.get("title", "")
-            if title_shape.text_frame.paragraphs:
-                _style_run(title_shape.text_frame.paragraphs[0].runs[0], size_pt=40, bold=True, rgb=ACCENT_COLOR)
+            paras = title_shape.text_frame.paragraphs
+            if paras and paras[0].runs:
+                _style_run(paras[0].runs[0], size_pt=40, bold=True, rgb=ACCENT_COLOR)
             
             body_shape = slide.placeholders[1]
             tf = body_shape.text_frame

@@ -39,11 +39,13 @@ async def send_whatsapp_media(remote_jid: str, file_path: str, caption: str = ""
         media_base64 = base64.b64encode(f.read()).decode("utf-8")
         
     if is_image:
+        ext = os.path.splitext(file_path)[1].lower()
+        img_mime = "image/jpeg" if ext in (".jpg", ".jpeg") else "image/png"
         payload = {
             "number": remote_jid,
             "options": {"delay": 1200, "presence": "composing"},
             "imageMessage": {
-                "image": f"data:image/png;base64,{media_base64}",
+                "image": f"data:{img_mime};base64,{media_base64}",
                 "caption": caption
             }
         }

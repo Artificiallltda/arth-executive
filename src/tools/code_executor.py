@@ -14,7 +14,7 @@ async def execute_python_code(code: str) -> str:
     - Limite de tempo de 30 segundos.
     """
     # Lista negra de seguran\u00e7a expandida
-    blacklist = ["os.", "subprocess.", "shutil.", "pickle.", "socket.", "sys.", "eval(", "exec(", "__import__"]
+    blacklist = ["os.", "subprocess.", "shutil.", "pickle.", "socket.", "sys.", "eval(", "exec(", "__import__", "open(", "__builtins__"]
     for blocked in blacklist:
         if blocked in code:
             return f"ERRO DE SEGURAN\u00c7A: O uso do m\u00f3dulo ou fun\u00e7\u00e3o '{blocked}' n\u00e3o \u00e9 permitido."
@@ -53,8 +53,8 @@ async def execute_python_code(code: str) -> str:
             process.kill()
             return "Erro: A execu\u00e7\u00e3o excedeu o tempo limite de 30 segundos."
         finally:
-            # Limpeza opcional do arquivo tempor\u00e1rio pode ser feita aqui
-            pass
+            if os.path.exists(filepath):
+                os.remove(filepath)
             
     except Exception as e:
         return f"Erro ao executar o c\u00f3digo: {str(e)}"

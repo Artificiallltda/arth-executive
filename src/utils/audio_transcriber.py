@@ -21,9 +21,12 @@ async def transcribe_audio_file(audio_path: str) -> str:
         headers = {'Authorization': f'Bearer {settings.OPENAI_API_KEY}'}
         
         # O Whisper exige envio multipart/form-data
+        ext = os.path.splitext(audio_path)[1].lower()
+        mime_map = {".ogg": "audio/ogg", ".mp3": "audio/mpeg", ".mp4": "audio/mp4", ".wav": "audio/wav", ".webm": "audio/webm"}
+        mime_type = mime_map.get(ext, "audio/mpeg")
         with open(audio_path, "rb") as f:
             files = {
-                "file": (os.path.basename(audio_path), f, "audio/mpeg"),
+                "file": (os.path.basename(audio_path), f, mime_type),
             }
             data = {
                 "model": "whisper-1"
