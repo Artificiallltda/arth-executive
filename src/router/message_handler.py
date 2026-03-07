@@ -134,6 +134,7 @@ async def receive_whatsapp(request: Request, background_tasks: BackgroundTasks):
 @router.post("/telegram/webhook")
 async def receive_telegram(request: Request, background_tasks: BackgroundTasks):
     body = await request.json()
+    logger.info(f"[TELEGRAM Webhook] Payload recebido")
     if "message" not in body: return {"status": "ignored"}
     
     msg = body["message"]
