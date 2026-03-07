@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, BackgroundTasks
+from fastapi import APIRouter, Request, BackgroundTasks, Query
 import logging
 import platform
 import asyncio
@@ -153,32 +153,48 @@ async def receive_telegram(request: Request, background_tasks: BackgroundTasks):
     background_tasks.add_task(run_pipeline)
     return {"status": "queued"}
 
+@router.get("/instagram/webhook")
+async def verify_instagram(
+    mode: str = Query(None, alias="hub.mode"),
+    token: str = Query(None, alias="hub.verify_token"),
+    challenge: str = Query(None, alias="hub.challenge"),
+):
+    """Verificação do webhook exigida pela Meta."""
+    if mode == "subscribe" and token == settings.WHATSAPP_VERIFY_TOKEN:
+        logger.info("[INSTAGRAM] Webhook verificado com sucesso")
+        return int(challenge)
+    return "Falha na verificação", 403
+
 @router.post("/instagram/webhook")
 async def receive_instagram(request: Request, background_tasks: BackgroundTasks):
-    """Webhook dedicado para Instagram (via Evolution API)."""
+    """Webhook para Instagram (Direto via Meta Graph API)."""
     data = await request.json()
-    logger.info(f"[INSTAGRAM Webhook] Payload recebido")
+    logger.info(f"[INSTAGRAM Webhook] Payload Meta recebido")
     
-    event = data.get("event")
-    if event != "messages.upsert": return {"status": "ignored"}
-    
-    message_data = data.get("data", {})
-    message = message_data.get("message", {})
-    
-    remote_jid = message_data.get("key", {}).get("remoteJid")
-    push_name = message_data.get("pushName", "Usuário")
-    
-    # Extrai o texto da mensagem (Instagram v2 costuma vir em conversation ou extendedTextMessage)
-    text = message.get("conversation") or message.get("extendedTextMessage", {}).get("text")
-    
-    if not text or not remote_jid: return {"status": "ignored"}
-
-    async def status_callback(msg: str):
-        await send_instagram_message(remote_jid, f"_{msg}_")
+    # Parsing do formato Meta Graph API
+    try:
+        entry = data.get("entry", [{}])[0]
+        messaging = entry.get("messaging", [{}])[0]
+        sender_id = messaging.get("sender", {}).get("id", "")
+        message = messaging.get("message", {})
+        text = message.get("text", "")
         
-    async def run_pipeline():
-        response = await execute_brain(user_id=remote_jid, text=text, channel="instagram", status_callback=status_callback, user_name=push_name)
-        await process_instagram_reply(remote_jid, response)
+        # A Meta não envia o nome do usuário no payload do webhook, 
+        # seria necessário uma chamada extra à API (/SENDER_ID) para obter.
+        user_name = "Usuário Instagram"
+        
+        if not text or not sender_id: return {"status": "ignored"}
 
-    background_tasks.add_task(run_pipeline)
-    return {"status": "queued"}
+        async def status_callback(msg: str):
+            # O Instagram direto não suporta status de digitando via API comum de forma simples
+            pass
+            
+        async def run_pipeline():
+            response = await execute_brain(user_id=sender_id, text=text, channel="instagram", status_callback=status_callback, user_name=user_name)
+            await process_instagram_reply(sender_id, response)
+
+        background_tasks.add_task(run_pipeline)
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Erro ao processar webhook Instagram Meta: {e}")
+        return {"status": "error"}

@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     INSTANCE_NAME: str = "arth_instance"
     TELEGRAM_BOT_TOKEN: str = ""
     
+    # --- META DIRECT API (Instagram/WhatsApp Business) ---
+    INSTAGRAM_ACCESS_TOKEN: str = ""
+    WHATSAPP_VERIFY_TOKEN: str = "arth_executive_verify" # Token para validação do webhook na Meta
+    META_API_VERSION: str = "v18.0"
+    
     # --- DATABASE (SUPABASE/POSTGRES) ---
     SUPABASE_DATABASE_URL: str = ""
     
