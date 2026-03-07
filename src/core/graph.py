@@ -3,6 +3,7 @@ import logging
 from typing import Literal, Optional, List
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import create_react_agent
@@ -67,10 +68,13 @@ qa_agent = create_specialist_agent([search_memory, save_memory], load_persona("q
 analyst_agent = create_specialist_agent([analyze_data_file, audit_supabase_security, audit_database_schema, search_memory, save_memory], load_persona("analyst.md"))
 
 async def agent_node(state, agent, name):
-    # Execução assíncrona mandatória para evitar erro de StructuredTool
+    # Execução assíncrona mandatória
     result = await agent.ainvoke(state, {"recursion_limit": 25})
+    # IMPORTANTE: Retornamos a última mensagem sem alteração para preservar links de mídias/arquivos
+    msg = result["messages"][-1]
+    msg.name = name
     return {
-        "messages": [AIMessage(content=result["messages"][-1].content, name=name)],
+        "messages": [msg],
         "sender": name
     }
 
@@ -87,48 +91,89 @@ options = ["FINISH", "arth_approval"] + members
 class RouteResponse(BaseModel):
     next_agent: Literal["FINISH", "arth_researcher", "arth_planner", "arth_executor", "arth_qa", "arth_analyst", "arth_approval"]
     final_answer: Optional[str] = ""
-    requires_approval: Optional[bool] = False
+    requires_approval: bool = False
 
 orchestrator_persona = load_persona("orchestrator.md")
-# Melhoramos o prompt para ser mais explícito com os tipos do Pydantic
+# Melhoramos o prompt para ser mais explícito com as regras de segurança
 prompt = ChatPromptTemplate.from_messages([
     ("system", orchestrator_persona),
     MessagesPlaceholder(variable_name="messages"),
-    ("system", "Quem deve atuar agora? Escolha um de: {options}. Defina requires_approval como true apenas se for uma ação crítica inédita."),
+    ("system", (
+        "Quem deve atuar agora? Escolha um de: {options}.\n\n"
+        "REGRA DE OURO DE SEGURANÇA:\n"
+        "Se a próxima ação for para o @arth-executor e envolver IMAGENS, PYTHON ou AGENDAMENTOS, "
+        "defina 'requires_approval=True' IMEDIATAMENTE. Não pule esta etapa."
+    )),
 ]).partial(options=str(options), members=", ".join(members))
 
-# NOVO: Usamos o método include_raw=False para simplificar a serialização
 supervisor_chain = prompt | llm_with_fallbacks.with_structured_output(RouteResponse)
 
 async def supervisor_node(state: AgentState):
     is_approved = state.get("approval_status") == "approved"
     messages = list(state.get("messages", []))
     
+    # --- CAMADA DE SEGURANÇA RESILIENTE ---
+    # Busca gatilhos no histórico recente se ainda não aprovado
+    critical_triggers = ["imagem", "image", "gerar", "crie", "create", "pdf", "docx", "pptx", "python", "agende", "lembrete", "reminder"]
+    found_trigger = False
+    for msg in reversed(messages):
+        if msg.type == "human":
+            if any(t in str(msg.content).lower() for t in critical_triggers):
+                found_trigger = True
+                break
+        if msg.type == "ai" and msg.name == "arth_orchestrator": # Para de procurar se já passou por mim
+             break
+             
+    needs_hard_approval = found_trigger and not is_approved
+
     if is_approved:
-        messages.append(SystemMessage(content="SISTEMA: O usuário JÁ AUTORIZOU esta ação. Vá direto para a execução sem perguntar novamente."))
+        logger.info("[HITL] Injetando instrução de bypass no histórico.")
+        messages.append(SystemMessage(content="SISTEMA: O usuário JÁ AUTORIZOU esta ação crítica. Prossiga IMEDIATAMENTE para a execução da ferramenta no @arth-executor. Não peça aprovação novamente."))
 
-    routing_result = await supervisor_chain.ainvoke({**state, "messages": messages})
+    routing_result = await supervisor_chain.ainvoke({**state, "messages": messages}, config=RunnableConfig(recursion_limit=50))
 
-    # TRAVA GOD MODE: Se o estado diz aprovado, ignoramos qualquer medo da LLM
+    # Força a aprovação se detectado gatilho crítico e o roteamento for para o Executor
+    if needs_hard_approval and routing_result.next_agent == "arth_executor":
+        routing_result.requires_approval = True
+
+    # BYPASS GOD CODE: Se já foi aprovado, NUNCA para na aprovação
     if is_approved:
         routing_result.requires_approval = False
         if routing_result.next_agent == "arth_approval":
             routing_result.next_agent = "arth_executor"
 
+    # --- LÓGICA DE FINALIZAÇÃO (Preserva Mídias e Evita Hallucinação) ---
     if routing_result.next_agent == "FINISH":
-        return {"next_agent": "FINISH", "messages": [AIMessage(content=routing_result.final_answer or "Pronto.", name="arth_orchestrator")]}
+        # Procura a última mensagem de um especialista que contenha uma tag
+        last_specialist_msg = next((m for m in reversed(messages) if m.type == "ai" and m.name in members), None)
+        
+        if last_specialist_msg and any(tag in str(last_specialist_msg.content) for tag in ["<SEND_FILE:", "<SEND_AUDIO:"]):
+            logger.info(f"[Supervisor] Finalizando com mídia detectada em {last_specialist_msg.name}")
+            return {"next_agent": "FINISH"}
+        
+        return {
+            "next_agent": "FINISH", 
+            "messages": [AIMessage(content=routing_result.final_answer or "Tarefa concluída com sucesso.", name="arth_orchestrator")]
+        }
     
+    # --- ROTA DE APROVAÇÃO ---
     if routing_result.requires_approval:
+        logger.warning("[⚠️ HITL] Bloqueio preventivo. Aguardando aprovação explícita.")
+        content = "[⚠️ Ação Crítica] Esta tarefa exige execução de comandos.\n\n**Você autoriza o Arth a prosseguir?** (Responda 'Sim' ou 'Ok')"
         return {
             "next_agent": "arth_approval", 
             "requires_approval": True,
-            "approval_status": "pending"
+            "messages": [AIMessage(content=content, name="arth_orchestrator")]
         }
         
     return {"next_agent": routing_result.next_agent, "approval_status": "none" if not is_approved else "approved"}
 
 async def approval_node(state: AgentState):
-    return {"approval_status": "approved", "requires_approval": False}
+    return {
+        "approval_status": "approved", 
+        "requires_approval": False,
+        "messages": [AIMessage(content="Autorização confirmada pelo usuário. Prosseguindo...", name="arth_approval")]
+    }
 
 def build_arth_graph():
     workflow = StateGraph(AgentState)

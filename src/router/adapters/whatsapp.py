@@ -22,36 +22,49 @@ async def send_whatsapp_message(remote_jid: str, text: str):
         except Exception as e:
             logger.error(f"Falha ao enviar mensagem Evolution API: {e}")
 
-async def send_whatsapp_document(remote_jid: str, file_path: str):
+async def send_whatsapp_media(remote_jid: str, file_path: str, caption: str = ""):
     if not settings.EVOLUTION_API_URL or not settings.EVOLUTION_API_KEY:
         return
     if not os.path.exists(file_path):
-        logger.error(f"Documento n\u00e3o encontrado para envio: {file_path}")
+        logger.error(f"Arquivo não encontrado para envio: {file_path}")
         return
         
-    mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    if file_path.endswith(".png"): mime_type = "image/png"
-    elif file_path.endswith(".pdf"): mime_type = "application/pdf"
+    is_image = file_path.lower().endswith((".png", ".jpg", ".jpeg"))
+    endpoint = "sendImage" if is_image else "sendMedia"
+    
+    url = f"{settings.EVOLUTION_API_URL}/message/{endpoint}/{settings.INSTANCE_NAME}"
+    headers = {"apikey": settings.EVOLUTION_API_KEY, "Content-Type": "application/json"}
     
     with open(file_path, "rb") as f:
         media_base64 = base64.b64encode(f.read()).decode("utf-8")
         
-    url = f"{settings.EVOLUTION_API_URL}/message/sendMedia/{settings.INSTANCE_NAME}"
-    headers = {"apikey": settings.EVOLUTION_API_KEY, "Content-Type": "application/json"}
-    payload = {
-        "number": remote_jid,
-        "options": {"delay": 1200, "presence": "composing"},
-        "mediaMessage": {
-            "mediatype": "document",
-            "fileName": os.path.basename(file_path),
-            "media": f"data:{mime_type};base64,{media_base64}"
+    if is_image:
+        payload = {
+            "number": remote_jid,
+            "options": {"delay": 1200, "presence": "composing"},
+            "imageMessage": {
+                "image": f"data:image/png;base64,{media_base64}",
+                "caption": caption
+            }
         }
-    }
+    else:
+        payload = {
+            "number": remote_jid,
+            "options": {"delay": 1200, "presence": "composing"},
+            "mediaMessage": {
+                "mediatype": "document",
+                "fileName": os.path.basename(file_path),
+                "caption": caption,
+                "media": f"data:application/octet-stream;base64,{media_base64}"
+            }
+        }
+        
     async with httpx.AsyncClient() as client:
         try:
-            await client.post(url, json=payload, headers=headers, timeout=30.0)
+            r = await client.post(url, json=payload, headers=headers, timeout=30.0)
+            logger.info(f"Evolution API {endpoint} result: {r.status_code}")
         except Exception as e:
-            logger.error(f"Falha ao enviar documento Evolution: {e}")
+            logger.error(f"Falha ao enviar mídia Evolution: {e}")
 
 async def process_whatsapp_reply(remote_jid: str, ai_response: str):
     # Extrai tags de envio de arquivo e limpa o texto
@@ -66,7 +79,7 @@ async def process_whatsapp_reply(remote_jid: str, ai_response: str):
         
     for file_name in file_matches:
         full_path = os.path.join(settings.DATA_OUTPUTS_PATH, file_name.strip())
-        await send_whatsapp_document(remote_jid, full_path)
+        await send_whatsapp_media(remote_jid, full_path)
         
     for audio_name in audio_matches:
         full_path = os.path.join(settings.DATA_OUTPUTS_PATH, audio_name.strip())

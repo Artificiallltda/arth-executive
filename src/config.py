@@ -23,14 +23,15 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash") # Modelo de próxima geração estável
     
     # --- KEYS ---
-    OPENAI_API_KEY: str = ""
-    GEMINI_API_KEY: str = ""
+    # --- KEYS ---
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     
     # --- CHANNELS (Evolution API / Telegram) ---
-    EVOLUTION_API_URL: str = ""
-    EVOLUTION_API_KEY: str = ""
-    INSTANCE_NAME: str = "arth_instance"
-    TELEGRAM_BOT_TOKEN: str = ""
+    EVOLUTION_API_URL: str = os.getenv("EVOLUTION_API_URL", "")
+    EVOLUTION_API_KEY: str = os.getenv("EVOLUTION_API_KEY", "")
+    INSTANCE_NAME: str = os.getenv("INSTANCE_NAME", "arth_instance")
+    TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     
     # --- META DIRECT API (Instagram/WhatsApp Business) ---
     INSTAGRAM_ACCESS_TOKEN: str = ""

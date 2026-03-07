@@ -47,7 +47,8 @@ def _parse_markdown_to_docx(doc: Document, content: str):
 async def generate_docx(title: str, content: str) -> str:
     """Cria um documento Word (.docx) com design executivo profissional."""
     try:
-        filename = f"{uuid.uuid4().hex[:8]}_{title.replace(' ', '_').lower()}.docx"
+        clean_title = re.sub(r'[^\w\s-]', '', title).strip().lower().replace(' ', '_')
+        filename = f"{uuid.uuid4().hex[:6]}_{clean_title}.docx"
         filepath = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
         
         doc = Document()
@@ -98,7 +99,8 @@ def _parse_markdown_to_pdf(pdf: FPDF, content: str):
 async def generate_pdf(title: str, content: str) -> str:
     """Cria um documento PDF com visual limpo e profissional."""
     try:
-        filename = f"{uuid.uuid4().hex[:8]}_{title.replace(' ', '_').lower()}.pdf"
+        clean_title = re.sub(r'[^\w\s-]', '', title).strip().lower().replace(' ', '_')
+        filename = f"{uuid.uuid4().hex[:6]}_{clean_title}.pdf"
         filepath = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
         
         pdf = FPDF()

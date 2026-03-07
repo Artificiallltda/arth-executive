@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request, BackgroundTasks, Query
 import logging
 import platform
 import asyncio
+import re
 from langchain_core.messages import HumanMessage
 
 from src.config import settings
@@ -86,8 +87,9 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
                         if status_callback: await status_callback(status_messages[node])
                         sent_etas.add(node)
         
-        # RESULTADO FINAL
+        # --- RESULTADO FINAL INTELIGENTE E ROBUSTO ---
         final_state = await brain.aget_state(config)
+        messages = final_state.values.get("messages", [])
         
         if final_state.next and "arth_approval" in final_state.next:
             return (
@@ -95,12 +97,38 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
                 "**Você autoriza o Arth a prosseguir?** (Responda 'Sim' ou 'Ok')"
             )
 
-        # Busca a resposta da IA no histórico
-        for m in reversed(final_state.values["messages"]):
-            if m.type == "ai" and m.content:
-                return m.content
+        # 1. Coleta todas as tags de mídias geradas nesta thread (Busca agressiva)
+        all_tags = []
+        for m in messages:
+            content_str = str(m.content)
+            # Detecta tags mesmo se o LLM as envolveu em lixo ou backticks
+            found = re.findall(r'(?:SEND_FILE|SEND_AUDIO):[^> \n`]+', content_str)
+            for f in found:
+                all_tags.append(f"<{f}>")
         
-        return "Tarefa concluída com sucesso."
+        unique_tags = list(dict.fromkeys(all_tags))
+
+        # 2. Busca a resposta textual da IA
+        last_ai_msg = None
+        for m in reversed(messages):
+            if m.type == "ai":
+                if getattr(m, "name", "") in ["arth_executor", "arth_researcher", "arth_analyst"] and m.content:
+                    last_ai_msg = m.content
+                    break
+                if last_ai_msg is None and m.content:
+                    last_ai_msg = m.content
+
+        final_response = last_ai_msg or "Tarefa concluída."
+        
+        # Limpeza Anti-Hallucinação: remove [links] e !images markdown que o LLM ousar criar
+        final_response = re.sub(r'!?\[.*?\]\(.*?\)', '', str(final_response))
+        
+        # 3. Garante que as tags de mídia reais estejam presentes
+        for tag in unique_tags:
+            if tag not in final_response:
+                final_response += f"\n{tag}"
+        
+        return final_response
             
     except Exception as e:
         logger.error(f"Erro no execute_brain: {e}", exc_info=True)
@@ -122,7 +150,8 @@ async def receive_whatsapp(request: Request, background_tasks: BackgroundTasks):
 
     text = message_info.get("conversation", "") or message_info.get("extendedTextMessage", {}).get("text", "")
     audio_msg = message_info.get("audioMessage")
-    media_b64 = data.get("base64")
+    # Tenta pegar base64 de múltiplos lugares possíveis na Evolution v2
+    media_b64 = data.get("base64") or message_info.get("base64")
     
     async def status_callback(msg: str): await send_whatsapp_message(remote_jid, f"_{msg}_")
         
@@ -130,18 +159,27 @@ async def receive_whatsapp(request: Request, background_tasks: BackgroundTasks):
         final_text = text
         media_context = None
         
-        # RESTAURAÇÃO: Trata áudio ou prepara contexto de imagem
+        # RESTAURAÇÃO: Trata áudio (com tratamento de erro robusto)
         if audio_msg and media_b64:
             await status_callback("Ouvindo seu áudio... 🎧⏳")
             temp_path = os.path.join(settings.DATA_OUTPUTS_PATH, f"in_{uuid.uuid4().hex[:8]}.ogg")
             try:
+                # Remove prefixo data:audio/... se existir
+                clean_b64 = media_b64.split(",")[-1] if "," in media_b64 else media_b64
                 with open(temp_path, "wb") as f:
-                    f.write(base64.b64decode(media_b64))
+                    f.write(base64.b64decode(clean_b64))
+                
                 transcription = await transcribe_audio_file(temp_path)
-                final_text = transcription
-                final_text += "\n[SISTEMA: Enviado por áudio.]"
+                if transcription and not transcription.startswith("Falha"):
+                    final_text = transcription
+                    logger.info(f"[Audio] Transcrição concluída: {final_text[:50]}...")
+                else:
+                    await status_callback("Não consegui entender o áudio perfeitamente, pode repetir?")
+                    return
             except Exception as e:
-                logger.error(f"Erro áudio: {e}")
+                logger.error(f"Erro ao processar áudio: {e}")
+                await status_callback("Houve um erro técnico ao processar seu áudio.")
+                return
             finally:
                 if os.path.exists(temp_path): os.remove(temp_path)
         elif media_b64:
