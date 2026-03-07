@@ -85,17 +85,19 @@ members = ["arth_researcher", "arth_planner", "arth_executor", "arth_qa", "arth_
 options = ["FINISH", "arth_approval"] + members
 
 class RouteResponse(BaseModel):
-    next_agent: Literal["FINISH", "arth_researcher", "arth_planner", "arth_executor", "arth_qa", "arth_analyst"]
-    final_answer: str = ""
-    requires_approval: bool = False
+    next_agent: Literal["FINISH", "arth_researcher", "arth_planner", "arth_executor", "arth_qa", "arth_analyst", "arth_approval"]
+    final_answer: Optional[str] = ""
+    requires_approval: Optional[bool] = False
 
 orchestrator_persona = load_persona("orchestrator.md")
+# Melhoramos o prompt para ser mais explícito com os tipos do Pydantic
 prompt = ChatPromptTemplate.from_messages([
     ("system", orchestrator_persona),
     MessagesPlaceholder(variable_name="messages"),
-    ("system", "Quem deve atuar agora? Escolha um de: {options}. Se for algo crítico que exija aprovação do Comandante, defina requires_approval=True."),
+    ("system", "Quem deve atuar agora? Escolha um de: {options}. Defina requires_approval como true apenas se for uma ação crítica inédita."),
 ]).partial(options=str(options), members=", ".join(members))
 
+# NOVO: Usamos o método include_raw=False para simplificar a serialização
 supervisor_chain = prompt | llm_with_fallbacks.with_structured_output(RouteResponse)
 
 async def supervisor_node(state: AgentState):
