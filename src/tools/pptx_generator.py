@@ -155,7 +155,7 @@ def _build_content(prs, title, bullets, img_path=None):
 async def generate_pptx(slides_content_json: str) -> str:
     """Gera apresentação executiva premium com design Manus AI (Navy + Cobalt Blue, Calibri)."""
     try:
-        filename = f"Exec_Deck_{uuid.uuid4().hex[:6]}.pptx"
+        filename = f"Exec-Deck-{uuid.uuid4().hex[:6]}.pptx"
         filepath = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
 
         content = json.loads(slides_content_json)
