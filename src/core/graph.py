@@ -87,9 +87,11 @@ async def agent_node(state, agent, name):
     msg = inner_messages[-1]
 
     # Garante que tags de arquivo/áudio geradas por ferramentas cheguem ao estado externo.
-    # O LLM às vezes não repete as tags na resposta final — este passo recupera do histórico interno.
-    all_inner_text = " ".join(str(m.content) for m in inner_messages)
-    file_tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):[^>]+>', all_inner_text)
+    # Escaneia APENAS ToolMessages (resultados das ferramentas desta execução),
+    # não o histórico de mensagens que pode conter tags de conversas anteriores.
+    tool_messages = [m for m in inner_messages if getattr(m, "type", "") == "tool"]
+    tool_text = " ".join(str(m.content) for m in tool_messages)
+    file_tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):[^>]+>', tool_text)
     if file_tags:
         msg_content = str(msg.content) if not isinstance(msg.content, str) else msg.content
         missing = [t for t in file_tags if t not in msg_content]
