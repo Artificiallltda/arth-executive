@@ -3,6 +3,8 @@ import os
 import re
 import uuid
 import logging
+import unicodedata
+import unicodedata
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -10,6 +12,22 @@ from fpdf import FPDF
 from src.config import settings
 
 logger = logging.getLogger(__name__)
+
+def _safe_filename(title: str, max_len: int = 50) -> str:
+    """Normaliza título para ASCII puro — evita surrogates e erros de encoding."""
+    normalized = unicodedata.normalize('NFKD', title)
+    ascii_only = normalized.encode('ascii', errors='ignore').decode('ascii')
+    safe = re.sub(r'[^\w\s-]', '', ascii_only).strip().lower().replace(' ', '_')
+    return (safe or 'documento')[:max_len]
+
+
+def _safe_filename(title: str, max_len: int = 50) -> str:
+    """Normaliza para ASCII puro — evita surrogates e erros de encoding."""
+    normalized = unicodedata.normalize('NFKD', title)
+    ascii_only = normalized.encode('ascii', errors='ignore').decode('ascii')
+    safe = re.sub(r'[^\w\s-]', '', ascii_only).strip().lower().replace(' ', '_')
+    return (safe or 'documento')[:max_len]
+
 
 # ─── Paleta Executiva ────────────────────────────────────────────────────────
 _AZUL_CORP  = RGBColor(28,  78, 158)   # Azul corporativo profundo
@@ -101,8 +119,7 @@ def _parse_markdown_to_docx(doc: Document, content: str):
 async def generate_docx(title: str, content: str) -> str:
     """Cria um documento Word (.docx) com design executivo profissional."""
     try:
-        clean_title = re.sub(r'[^\w\s-]', '', title).strip().lower().replace(' ', '_')
-        filename = f"{uuid.uuid4().hex[:6]}_{clean_title}.docx"
+        filename = f"{uuid.uuid4().hex[:6]}_{_safe_filename(title)}.docx"
         filepath = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
 
         doc = Document()
@@ -162,8 +179,7 @@ class ArthPDF(FPDF):
 async def generate_pdf(title: str, content: str) -> str:
     """Cria um documento PDF com visual executivo e suporte total a UTF-8."""
     try:
-        clean_title = re.sub(r'[^\w\s-]', '', title).strip().lower().replace(' ', '_')
-        filename = f"{uuid.uuid4().hex[:6]}_{clean_title}.pdf"
+        filename = f"{uuid.uuid4().hex[:6]}_{_safe_filename(title)}.pdf"
         filepath = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
 
         pdf = ArthPDF()

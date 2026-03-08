@@ -64,16 +64,21 @@ def get_logs(n: int = 60, level: str = None) -> list[dict]:
     return entries[-n:]
 
 
+def _safe_str(s: str, max_len: int = 250) -> str:
+    """Remove surrogate characters que quebram UTF-8 no Telegram."""
+    return s.encode("utf-8", errors="replace").decode("utf-8")[:max_len]
+
+
 def get_logs_text(n: int = 30) -> str:
     """Versão compacta para enviar via chat."""
     entries = get_logs(n)
     if not entries:
-        return "📭 Nenhum log registrado ainda."
-    lines = [f"📋 *Últimos {len(entries)} logs do sistema:*\n"]
+        return "Nenhum log registrado ainda."
+    lines = [f"Ultimos {len(entries)} logs do sistema:\n"]
     for e in entries:
-        icon = _LEVEL_ICON.get(e["level"], "•")
-        msg = e["message"][:250].replace("*", "").replace("`", "")
-        lines.append(f"{icon} `[{e['ts']}]` {e['module']}: {msg}")
+        icon = _LEVEL_ICON.get(e["level"], "-")
+        msg = _safe_str(e["message"]).replace("*", "").replace("`", "").replace("_", "-")
+        lines.append(f"{icon} [{e['ts']}] {e['module']}: {msg}")
     return "\n".join(lines)
 
 
