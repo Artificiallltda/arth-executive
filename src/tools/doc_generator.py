@@ -199,6 +199,12 @@ async def generate_pdf(title: str, content: str) -> str:
         pdf.line(pdf.l_margin, y, pdf.w - pdf.r_margin, y)
         pdf.ln(12)
 
+        def _clean(text: str) -> str:
+            """Remove marcadores markdown e caracteres fora do Latin-1."""
+            text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+            text = re.sub(r'\*([^*]+)\*', r'\1', text)
+            return text.encode("latin-1", errors="replace").decode("latin-1")
+
         # Conteúdo
         for line in content.split('\n'):
             stripped = line.strip()
@@ -209,39 +215,45 @@ async def generate_pdf(title: str, content: str) -> str:
 
             if stripped.startswith('# ') and not stripped.startswith('## '):
                 pdf.ln(4)
-                pdf.set_font("Helvetica", "B", 16)
+                pdf.set_font("Helvetica", "B", 17)
                 pdf.set_text_color(28, 78, 158)
-                pdf.multi_cell(0, 11, stripped[2:])
+                pdf.multi_cell(0, 11, _clean(stripped[2:]))
                 # Underline do H1
                 y2 = pdf.get_y() + 1
                 pdf.set_draw_color(28, 78, 158)
-                pdf.set_line_width(0.4)
+                pdf.set_line_width(0.5)
                 pdf.line(pdf.l_margin, y2, pdf.w - pdf.r_margin, y2)
                 pdf.ln(5)
 
             elif stripped.startswith('## '):
                 pdf.ln(3)
-                pdf.set_font("Helvetica", "B", 13)
+                pdf.set_font("Helvetica", "B", 14)
                 pdf.set_text_color(36, 110, 185)
-                pdf.multi_cell(0, 9, stripped[3:])
+                pdf.multi_cell(0, 9, _clean(stripped[3:]))
                 pdf.ln(2)
 
             elif stripped.startswith('### '):
                 pdf.ln(2)
-                pdf.set_font("Helvetica", "BI", 11)
+                pdf.set_font("Helvetica", "B", 12)
                 pdf.set_text_color(64, 64, 64)
-                pdf.multi_cell(0, 8, stripped[4:])
+                pdf.multi_cell(0, 8, _clean(stripped[4:]))
                 pdf.ln(1)
 
             elif stripped.startswith('- ') or stripped.startswith('* '):
                 pdf.set_font("Helvetica", "", 11)
                 pdf.set_text_color(50, 50, 50)
-                pdf.multi_cell(0, 7, f"  •  {stripped[2:]}")
+                pdf.multi_cell(0, 7, f"  -  {_clean(stripped[2:])}")
+
+            elif re.match(r'^\d+\. ', stripped):
+                body = re.sub(r'^\d+\. ', '', stripped)
+                pdf.set_font("Helvetica", "", 11)
+                pdf.set_text_color(50, 50, 50)
+                pdf.multi_cell(0, 7, f"  {_clean(body)}")
 
             else:
                 pdf.set_font("Helvetica", "", 11)
                 pdf.set_text_color(50, 50, 50)
-                pdf.multi_cell(0, 7, stripped)
+                pdf.multi_cell(0, 7, _clean(stripped))
                 pdf.ln(2)
 
         pdf.output(filepath)
