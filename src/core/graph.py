@@ -88,6 +88,7 @@ async def agent_node(state, agent, name):
 
     # Normaliza content de modelos com blocos estruturados (ex: Gemini 2.5 thinking mode).
     # Sem isso, msg.content vira {'type': 'text', 'text': '...', 'extras': {...}} em string crua.
+    original_type = type(msg.content).__name__
     if not isinstance(msg.content, str):
         if isinstance(msg.content, list):
             text_parts = [b.get('text', '') for b in msg.content
@@ -99,6 +100,9 @@ async def agent_node(state, agent, name):
             clean = str(msg.content)
         if clean:
             msg = msg.model_copy(update={"content": clean})
+            logger.info(f"[{name}] content normalizado: {original_type} → str ({len(clean)} chars)")
+        else:
+            logger.warning(f"[{name}] content normalização falhou: tipo={original_type}, valor={str(msg.content)[:100]}")
 
     # Garante que tags de arquivo/áudio geradas por ferramentas cheguem ao estado externo.
     # Escaneia APENAS ToolMessages (resultados das ferramentas desta execução),

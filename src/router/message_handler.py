@@ -50,6 +50,11 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
     if media_data and "b64" in media_data:
         media_b64 = media_data["b64"]
 
+    # Comando /logs — retorna buffer de diagnóstico direto no chat
+    if text.lower().strip() == "/logs":
+        from src.utils.log_buffer import get_logs_text
+        return get_logs_text(n=30)
+
     # Verifica comando de reset antes de qualquer processamento
     if text.lower().strip() in _RESET_KEYWORDS:
         _reset_session(channel, user_id)
@@ -103,14 +108,26 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
                         sent_etas.add(node)
 
                     # Captura tags e texto dos especialistas direto do delta do stream
-                    for msg in state_update.get("messages", []):
+                    msgs_in_update = state_update.get("messages", [])
+                    logger.debug(f"[Stream:{node}] {len(msgs_in_update)} mensagem(ns) no delta")
+                    for msg in msgs_in_update:
                         if not hasattr(msg, "content") or not msg.content:
+                            logger.debug(f"[Stream:{node}] Mensagem sem content, ignorando")
                             continue
                         content_str = str(msg.content)
+                        content_type = type(msg.content).__name__
+                        logger.debug(f"[Stream:{node}] content_type={content_type} snippet={content_str[:120]!r}")
                         tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):[^>]+>', content_str)
+                        if tags:
+                            logger.info(f"[Stream:{node}] Tags capturadas: {tags}")
                         collected_tags.extend(tags)
                         if node in SPECIALIST_NODES:
                             last_specialist_text = content_str
+                            logger.info(f"[Stream:{node}] last_specialist_text atualizado ({len(content_str)} chars)")
+
+            # Diagnóstico pós-stream
+            logger.info(f"[Brain] Stream finalizado. last_specialist_text={'NONE' if not last_specialist_text else f'{len(last_specialist_text)} chars'}")
+            logger.info(f"[Brain] collected_tags={collected_tags}")
 
             # Monta resposta final
             final_response = last_specialist_text or "Tarefa concluída."
@@ -122,7 +139,7 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
                 if tag not in final_response:
                     final_response += f"\n{tag}"
 
-            logger.info(f"[Brain] Resposta final pronta. Tags={unique_tags}")
+            logger.info(f"[Brain] Resposta final: {final_response[:300]!r}")
             return final_response
 
         except Exception as e:

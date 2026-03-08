@@ -127,9 +127,11 @@ async def generate_docx(title: str, content: str) -> str:
         _parse_markdown_to_docx(doc, content)
 
         doc.save(filepath)
+        exists = os.path.exists(filepath)
+        logger.info(f"[DOCX] Salvo: {filepath} | exists={exists} | size={os.path.getsize(filepath) if exists else 0}B")
         return f"Documento Word executivo gerado com sucesso: <SEND_FILE:{filename}>"
     except Exception as e:
-        logger.error(f"[DOCX] Erro: {e}")
+        logger.error(f"[DOCX] Erro: {e}", exc_info=True)
         return f"Falha ao gerar DOCX: {str(e)}"
 
 
@@ -227,7 +229,9 @@ async def generate_pdf(title: str, content: str) -> str:
                 pdf.ln(2)
 
         pdf.output(filepath)
+        exists = os.path.exists(filepath)
+        logger.info(f"[PDF] Salvo: {filepath} | exists={exists} | size={os.path.getsize(filepath) if exists else 0}B")
         return f"PDF Executivo gerado com sucesso: <SEND_FILE:{filename}>"
     except Exception as e:
-        logger.error(f"[PDF] Erro: {e}")
+        logger.error(f"[PDF] Erro: {e}", exc_info=True)
         return f"Falha ao gerar PDF: {str(e)}"
