@@ -8,21 +8,20 @@ logger = logging.getLogger(__name__)
 @tool
 async def search_web(query: str, max_results: int = 8) -> str:
     """
-    Pesquisa na web em tempo real (Google Search via DuckDuckGo).
-    Use esta ferramenta para buscar fatos, noticias, dados de mercado e informacoes atualizadas.
+    Pesquisa na web em tempo real. Use para fatos, noticias e dados atuais.
     """
     try:
         logger.info(f"[WebSearch] Pesquisando: {query}")
-        def _search():
-            with DDGS() as ddgs:
-                # 'wt-wt' para resultados globais/mais amplos se regional falhar
-                results = list(ddgs.text(query, max_results=max_results))
-                return results
-
-        results = await asyncio.wait_for(asyncio.to_thread(_search), timeout=20.0)
+        
+        # Uso direto do DDGS conforme nova documentacao
+        results = []
+        with DDGS() as ddgs:
+            ddgs_gen = ddgs.text(query, max_results=max_results)
+            if ddgs_gen:
+                results = list(ddgs_gen)
 
         if not results:
-            return f"Nenhum resultado em tempo real encontrado para: {query}"
+            return f"Nenhuma informacao recente encontrada para: {query}"
 
         formatted_results = []
         for i, r in enumerate(results):
@@ -34,5 +33,5 @@ async def search_web(query: str, max_results: int = 8) -> str:
 
         return "\n".join(formatted_results)
     except Exception as e:
-        logger.error(f"[WebSearch] Erro de conectividade: {e}")
-        return f"Erro ao acessar a internet em tempo real: {str(e)}"
+        logger.error(f"[WebSearch] Falha: {e}")
+        return f"Erro na pesquisa em tempo real: {str(e)}"

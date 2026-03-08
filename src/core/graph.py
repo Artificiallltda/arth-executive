@@ -116,7 +116,7 @@ options = ["FINISH"] + members
 
 class RouteResponse(BaseModel):
     next_agent: Literal["FINISH", "arth_researcher", "arth_planner", "arth_executor", "arth_qa", "arth_analyst"]
-    final_answer: Optional[str] = ""
+    final_answer: str = "" # Removido Optional para evitar Erro de Serialização no Pydantic
 
 orchestrator_persona = load_persona("orchestrator.md")
 prompt = ChatPromptTemplate.from_messages([
