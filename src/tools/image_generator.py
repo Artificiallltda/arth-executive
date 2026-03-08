@@ -10,7 +10,8 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
-_TIMEOUT = 50  # segundos — timeout no cliente HTTP
+_TIMEOUT_S = 50   # timeout asyncio em segundos
+_TIMEOUT_MS = 50_000  # mesmo timeout para http_options (SDK usa milissegundos)
 
 
 def _build_prompt(prompt: str) -> str:
@@ -49,7 +50,7 @@ def _run_flash_image(enhanced_prompt: str) -> tuple[bytes, str]:
 
     client = genai.Client(
         api_key=settings.GEMINI_API_KEY,
-        http_options={"timeout": _TIMEOUT},
+        http_options={"timeout": _TIMEOUT_MS},
     )
     response = client.models.generate_content(
         model="gemini-3.1-flash-image-preview",
@@ -67,7 +68,7 @@ def _run_gemini_25_flash(enhanced_prompt: str) -> tuple[bytes, str]:
 
     client = genai.Client(
         api_key=settings.GEMINI_API_KEY,
-        http_options={"timeout": _TIMEOUT},
+        http_options={"timeout": _TIMEOUT_MS},
     )
     response = client.models.generate_content(
         model="gemini-2.5-flash",
@@ -97,7 +98,7 @@ async def generate_image(prompt: str, orientation: Optional[str] = "square") -> 
         logger.info(f"[ImageGen] Tentando gemini-3.1-flash-image-preview | {enhanced_prompt[:80]}...")
         image_bytes, mime = await asyncio.wait_for(
             asyncio.to_thread(_run_flash_image, enhanced_prompt),
-            timeout=_TIMEOUT + 5,
+            timeout=_TIMEOUT_S + 5,
         )
         model_used = "gemini-3.1-flash-image-preview"
         logger.info(f"[ImageGen] flash-image-preview OK: {len(image_bytes):,} bytes, mime={mime}")
@@ -108,7 +109,7 @@ async def generate_image(prompt: str, orientation: Optional[str] = "square") -> 
         try:
             image_bytes, mime = await asyncio.wait_for(
                 asyncio.to_thread(_run_gemini_25_flash, enhanced_prompt),
-                timeout=_TIMEOUT + 5,
+                timeout=_TIMEOUT_S + 5,
             )
             model_used = "gemini-2.5-flash"
             logger.info(f"[ImageGen] gemini-2.5-flash OK: {len(image_bytes):,} bytes, mime={mime}")

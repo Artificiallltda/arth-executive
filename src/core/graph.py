@@ -164,12 +164,20 @@ async def supervisor_node(state: AgentState):
     last_human_idx = max((i for i, m in enumerate(messages) if m.type == "human"), default=0)
     msgs_this_turn = messages[last_human_idx + 1:]
 
-    # Se já foi gerado arquivo NESTE turno, encerra imediatamente (evita loop).
+    # Conta execuções por especialista neste turno — previne loop infinito.
+    specialist_runs: dict = {}
     for m in msgs_this_turn:
         if m.type == "ai" and getattr(m, "name", "") in members:
+            specialist_runs[m.name] = specialist_runs.get(m.name, 0) + 1
             if any(tag in str(m.content) for tag in ["<SEND_FILE:", "<SEND_AUDIO:"]):
                 logger.info(f"[Supervisor] Arquivo já gerado por {m.name}, encerrando rodada.")
                 return {"next_agent": "FINISH"}
+
+    # Se qualquer especialista já rodou 2+ vezes sem entregar arquivo → força FINISH
+    if any(count >= 2 for count in specialist_runs.values()):
+        repeat_info = {k: v for k, v in specialist_runs.items() if v >= 2}
+        logger.warning(f"[Supervisor] Loop detectado {repeat_info}. Forçando FINISH.")
+        return {"next_agent": "FINISH"}
 
     routing_result = await supervisor_chain.ainvoke(state)
     logger.info(f"[ROUTER] Para: {routing_result.next_agent}")
