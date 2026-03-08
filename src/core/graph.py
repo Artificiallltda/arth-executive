@@ -148,13 +148,12 @@ supervisor_chain = prompt | llm_with_fallbacks.with_structured_output(RouteRespo
 async def supervisor_node(state: AgentState):
     messages = list(state.get("messages", []))
 
-    # Guarda: se já foi gerado um arquivo desde o último HumanMessage, encerra imediatamente.
-    # Evita que o orquestrador invoque o executor múltiplas vezes por rodada.
-    last_human_idx = 0
-    for i, m in enumerate(messages):
-        if m.type == "human":
-            last_human_idx = i
-    for m in messages[last_human_idx + 1:]:
+    # Índice do último HumanMessage = início do turno atual
+    last_human_idx = max((i for i, m in enumerate(messages) if m.type == "human"), default=0)
+    msgs_this_turn = messages[last_human_idx + 1:]
+
+    # Se já foi gerado arquivo NESTE turno, encerra imediatamente (evita loop).
+    for m in msgs_this_turn:
         if m.type == "ai" and getattr(m, "name", "") in members:
             if any(tag in str(m.content) for tag in ["<SEND_FILE:", "<SEND_AUDIO:"]):
                 logger.info(f"[Supervisor] Arquivo já gerado por {m.name}, encerrando rodada.")
@@ -164,19 +163,28 @@ async def supervisor_node(state: AgentState):
     logger.info(f"[ROUTER] Para: {routing_result.next_agent}")
 
     if routing_result.next_agent == "FINISH":
-        messages = list(state.get("messages", []))
-        # Se o último especialista já deu uma resposta rica (com arquivo ou texto longo), NÃO adicionamos nada em cima.
-        last_specialist_msg = next((m for m in reversed(messages) if m.type == "ai" and m.name in members), None)
+        # CRÍTICO: só considera "resposta preservada" se especialista rodou NESTE turno.
+        # Antes buscava em todo o histórico → pegava executor de turnos anteriores → "Tarefa concluída" falso.
+        last_specialist_msg = next(
+            (m for m in reversed(msgs_this_turn) if m.type == "ai" and m.name in members),
+            None
+        )
 
         if last_specialist_msg:
             logger.info(f"[Supervisor] Finalizando. Preservando resposta de {last_specialist_msg.name}")
             return {"next_agent": "FINISH"}
 
-        # Caso contrário, o orquestrador responde diretamente.
-        return {
-            "next_agent": "FINISH",
-            "messages": [AIMessage(content=routing_result.final_answer or "Processamento concluído.", name="arth_orchestrator")]
-        }
+        # Supervisor disse FINISH mas nenhum especialista rodou neste turno.
+        if routing_result.final_answer and routing_result.final_answer.strip():
+            logger.info("[Supervisor] FINISH com resposta direta do orquestrador.")
+            return {
+                "next_agent": "FINISH",
+                "messages": [AIMessage(content=routing_result.final_answer, name="arth_orchestrator")]
+            }
+
+        # Sem especialista e sem resposta → força executor para não travar.
+        logger.warning("[Supervisor] FINISH prematuro detectado — forçando arth_executor.")
+        return {"next_agent": "arth_executor"}
 
     return {"next_agent": routing_result.next_agent}
 
