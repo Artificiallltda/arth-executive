@@ -147,15 +147,17 @@ async def supervisor_node(state: AgentState):
 
     if routing_result.next_agent == "FINISH":
         messages = list(state.get("messages", []))
+        # Se o último especialista já deu uma resposta rica (com arquivo ou texto longo), NÃO adicionamos nada em cima.
         last_specialist_msg = next((m for m in reversed(messages) if m.type == "ai" and m.name in members), None)
 
-        if last_specialist_msg and any(tag in str(last_specialist_msg.content) for tag in ["<SEND_FILE:", "<SEND_AUDIO:"]):
-            logger.info(f"[Supervisor] Finalizando com mídia detectada em {last_specialist_msg.name}")
+        if last_specialist_msg:
+            logger.info(f"[Supervisor] Finalizando. Preservando resposta de {last_specialist_msg.name}")
             return {"next_agent": "FINISH"}
 
+        # Caso contrário, o orquestrador responde diretamente.
         return {
             "next_agent": "FINISH",
-            "messages": [AIMessage(content=routing_result.final_answer or "Tarefa concluída.", name="arth_orchestrator")]
+            "messages": [AIMessage(content=routing_result.final_answer or "Processamento concluído.", name="arth_orchestrator")]
         }
 
     return {"next_agent": routing_result.next_agent}
