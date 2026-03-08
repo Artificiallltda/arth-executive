@@ -12,13 +12,14 @@ async def search_web(query: str, max_results: int = 8) -> str:
     """
     try:
         logger.info(f"[WebSearch] Pesquisando: {query}")
-        
-        # Uso direto do DDGS conforme nova documentacao
-        results = []
-        with DDGS() as ddgs:
-            ddgs_gen = ddgs.text(query, max_results=max_results)
-            if ddgs_gen:
-                results = list(ddgs_gen)
+
+        # DDGS é síncrono — rodar em thread separada para não bloquear o event loop
+        def _run_search():
+            with DDGS() as ddgs:
+                gen = ddgs.text(query, max_results=max_results)
+                return list(gen) if gen else []
+
+        results = await asyncio.to_thread(_run_search)
 
         if not results:
             return f"Nenhuma informacao recente encontrada para: {query}"

@@ -11,40 +11,91 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
-# --- Cores Executivas ---
-AZUL_EXEC = RGBColor(31, 73, 125)
-CINZA_CORP = RGBColor(80, 80, 80)
+# ─── Paleta Executiva ────────────────────────────────────────────────────────
+_AZUL_CORP  = RGBColor(28,  78, 158)   # Azul corporativo profundo
+_AZUL_SEC   = RGBColor(36, 110, 185)   # Azul secundário
+_CINZA_H    = RGBColor(45,  45,  45)   # Quase preto para sub-headings
+_CINZA_BODY = RGBColor(55,  55,  55)   # Cinza escuro para corpo
 
-def _add_rich_text(paragraph, text: str):
+
+# ─── Helpers DOCX ────────────────────────────────────────────────────────────
+
+def _add_rich_text(paragraph, text: str, size_pt: int = 11, color=None):
     """Adiciona texto com suporte a **negrito** inline."""
     parts = re.split(r'(\*\*[^*]+\*\*)', text)
     for part in parts:
-        if part.startswith('**') and part.endswith('**'):
-            run = paragraph.add_run(part[2:-2])
-            run.bold = True
-        else:
-            paragraph.add_run(part)
+        bold = part.startswith('**') and part.endswith('**')
+        run = paragraph.add_run(part[2:-2] if bold else part)
+        run.bold = bold
+        run.font.size = Pt(size_pt)
+        run.font.name = "Calibri"
+        if color:
+            run.font.color.rgb = color
+
+
+def _set_margins(doc: Document, margin_in: float = 1.0):
+    for section in doc.sections:
+        section.top_margin    = Inches(margin_in)
+        section.bottom_margin = Inches(margin_in)
+        section.left_margin   = Inches(margin_in)
+        section.right_margin  = Inches(margin_in)
+
 
 def _parse_markdown_to_docx(doc: Document, content: str):
-    """Aplica design executivo no Word."""
-    lines = content.split('\n')
-    for line in lines:
+    """Converte markdown simples em Word com design executivo."""
+    for line in content.split('\n'):
         stripped = line.strip()
-        if not stripped: continue
-        
+
+        if not stripped:
+            p = doc.add_paragraph()
+            p.paragraph_format.space_after = Pt(4)
+            continue
+
         if stripped.startswith('# ') and not stripped.startswith('## '):
             h = doc.add_heading(stripped[2:].strip(), level=1)
-            if h.runs: h.runs[0].font.color.rgb = AZUL_EXEC
+            h.paragraph_format.space_before = Pt(20)
+            h.paragraph_format.space_after  = Pt(8)
+            if h.runs:
+                h.runs[0].font.color.rgb = _AZUL_CORP
+                h.runs[0].font.size      = Pt(16)
+                h.runs[0].font.name      = "Calibri"
+
         elif stripped.startswith('## '):
             h = doc.add_heading(stripped[3:].strip(), level=2)
-            if h.runs: h.runs[0].font.color.rgb = CINZA_CORP
+            h.paragraph_format.space_before = Pt(14)
+            h.paragraph_format.space_after  = Pt(6)
+            if h.runs:
+                h.runs[0].font.color.rgb = _AZUL_SEC
+                h.runs[0].font.size      = Pt(13)
+                h.runs[0].font.name      = "Calibri"
+
+        elif stripped.startswith('### '):
+            h = doc.add_heading(stripped[4:].strip(), level=3)
+            h.paragraph_format.space_before = Pt(10)
+            h.paragraph_format.space_after  = Pt(4)
+            if h.runs:
+                h.runs[0].font.color.rgb = _CINZA_H
+                h.runs[0].font.size      = Pt(11)
+                h.runs[0].font.name      = "Calibri"
+
         elif stripped.startswith('- ') or stripped.startswith('* '):
             p = doc.add_paragraph(style='List Bullet')
-            _add_rich_text(p, stripped[2:].strip())
+            p.paragraph_format.space_after  = Pt(4)
+            p.paragraph_format.space_before = Pt(2)
+            _add_rich_text(p, stripped[2:].strip(), size_pt=11, color=_CINZA_BODY)
+
+        elif re.match(r'^\d+\. ', stripped):
+            text_body = re.sub(r'^\d+\. ', '', stripped)
+            p = doc.add_paragraph(style='List Number')
+            p.paragraph_format.space_after = Pt(4)
+            _add_rich_text(p, text_body, size_pt=11, color=_CINZA_BODY)
+
         else:
             p = doc.add_paragraph()
-            p.paragraph_format.space_after = Pt(8)
-            _add_rich_text(p, stripped)
+            p.paragraph_format.space_after  = Pt(8)
+            p.paragraph_format.space_before = Pt(2)
+            _add_rich_text(p, stripped, size_pt=11, color=_CINZA_BODY)
+
 
 @tool
 async def generate_docx(title: str, content: str) -> str:
@@ -53,28 +104,57 @@ async def generate_docx(title: str, content: str) -> str:
         clean_title = re.sub(r'[^\w\s-]', '', title).strip().lower().replace(' ', '_')
         filename = f"{uuid.uuid4().hex[:6]}_{clean_title}.docx"
         filepath = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
-        
+
         doc = Document()
+        _set_margins(doc, margin_in=1.0)
+
+        # Título principal — centralizado, azul, grande
         title_h = doc.add_heading(title, 0)
         title_h.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
+        title_h.paragraph_format.space_after = Pt(6)
+        if title_h.runs:
+            title_h.runs[0].font.color.rgb = _AZUL_CORP
+            title_h.runs[0].font.size      = Pt(22)
+            title_h.runs[0].font.name      = "Calibri"
+
+        # Linha decorativa abaixo do título
+        sep = doc.add_paragraph()
+        sep.paragraph_format.space_after = Pt(18)
+        r = sep.add_run("─" * 78)
+        r.font.color.rgb = _AZUL_CORP
+        r.font.size      = Pt(8)
+
         _parse_markdown_to_docx(doc, content)
+
         doc.save(filepath)
         return f"Documento Word executivo gerado com sucesso: <SEND_FILE:{filename}>"
     except Exception as e:
+        logger.error(f"[DOCX] Erro: {e}")
         return f"Falha ao gerar DOCX: {str(e)}"
+
+
+# ─── PDF ─────────────────────────────────────────────────────────────────────
 
 class ArthPDF(FPDF):
     def header(self):
-        self.set_font("Helvetica", "B", 10)
-        self.set_text_color(150, 150, 150)
-        self.cell(0, 10, "ARTH EXECUTIVE | CONFIDENTIAL", 0, 1, "R")
+        self.set_font("Helvetica", "B", 9)
+        self.set_text_color(140, 140, 140)
+        self.cell(0, 8, "ARTH EXECUTIVE  ·  CONFIDENTIAL", 0, 1, "R")
+        # Linha decorativa azul
+        self.set_draw_color(88, 166, 255)
+        self.set_line_width(0.4)
+        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
         self.ln(5)
 
     def footer(self):
         self.set_y(-15)
-        self.set_font("Helvetica", "I", 8)
-        self.cell(0, 10, f"Page {self.page_no()}", 0, 0, "C")
+        self.set_draw_color(88, 166, 255)
+        self.set_line_width(0.3)
+        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
+        self.set_font("Helvetica", "", 8)
+        self.set_text_color(140, 140, 140)
+        self.cell(0, 10, f"Página {self.page_no()}", 0, 0, "C")
+
 
 @tool
 async def generate_pdf(title: str, content: str) -> str:
@@ -83,48 +163,71 @@ async def generate_pdf(title: str, content: str) -> str:
         clean_title = re.sub(r'[^\w\s-]', '', title).strip().lower().replace(' ', '_')
         filename = f"{uuid.uuid4().hex[:6]}_{clean_title}.pdf"
         filepath = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
-        
+
         pdf = ArthPDF()
+        pdf.set_margins(left=18, top=15, right=18)
+        pdf.set_auto_page_break(auto=True, margin=20)
         pdf.add_page()
-        
-        # Título Principal
-        pdf.set_font("Helvetica", "B", 24)
-        pdf.set_text_color(31, 73, 125)
-        pdf.multi_cell(0, 20, title, align='C')
-        pdf.ln(10)
-        
+
+        # Título principal
+        pdf.set_font("Helvetica", "B", 22)
+        pdf.set_text_color(28, 78, 158)
+        pdf.multi_cell(0, 14, title, align='C')
+
+        # Linha decorativa azul
+        pdf.set_draw_color(88, 166, 255)
+        pdf.set_line_width(0.8)
+        y = pdf.get_y() + 3
+        pdf.line(pdf.l_margin, y, pdf.w - pdf.r_margin, y)
+        pdf.ln(12)
+
         # Conteúdo
-        lines = content.split('\n')
-        for line in lines:
+        for line in content.split('\n'):
             stripped = line.strip()
+
             if not stripped:
-                pdf.ln(4)
+                pdf.ln(5)
                 continue
-            
+
             if stripped.startswith('# ') and not stripped.startswith('## '):
-                pdf.set_font("Helvetica", "B", 16)
-                pdf.set_text_color(31, 73, 125)
-                pdf.multi_cell(0, 12, stripped[2:])
-                pdf.set_draw_color(31, 73, 125)
-                pdf.line(pdf.get_x(), pdf.get_y(), 200, pdf.get_y())
                 pdf.ln(4)
+                pdf.set_font("Helvetica", "B", 16)
+                pdf.set_text_color(28, 78, 158)
+                pdf.multi_cell(0, 11, stripped[2:])
+                # Underline do H1
+                y2 = pdf.get_y() + 1
+                pdf.set_draw_color(28, 78, 158)
+                pdf.set_line_width(0.4)
+                pdf.line(pdf.l_margin, y2, pdf.w - pdf.r_margin, y2)
+                pdf.ln(5)
+
             elif stripped.startswith('## '):
+                pdf.ln(3)
                 pdf.set_font("Helvetica", "B", 13)
-                pdf.set_text_color(80, 80, 80)
-                pdf.multi_cell(0, 10, stripped[3:])
+                pdf.set_text_color(36, 110, 185)
+                pdf.multi_cell(0, 9, stripped[3:])
                 pdf.ln(2)
+
+            elif stripped.startswith('### '):
+                pdf.ln(2)
+                pdf.set_font("Helvetica", "BI", 11)
+                pdf.set_text_color(64, 64, 64)
+                pdf.multi_cell(0, 8, stripped[4:])
+                pdf.ln(1)
+
             elif stripped.startswith('- ') or stripped.startswith('* '):
                 pdf.set_font("Helvetica", "", 11)
-                pdf.set_text_color(0, 0, 0)
-                pdf.multi_cell(0, 7, f"  • {stripped[2:]}")
+                pdf.set_text_color(50, 50, 50)
+                pdf.multi_cell(0, 7, f"  •  {stripped[2:]}")
+
             else:
                 pdf.set_font("Helvetica", "", 11)
-                pdf.set_text_color(0, 0, 0)
+                pdf.set_text_color(50, 50, 50)
                 pdf.multi_cell(0, 7, stripped)
                 pdf.ln(2)
-                
+
         pdf.output(filepath)
         return f"PDF Executivo gerado com sucesso: <SEND_FILE:{filename}>"
     except Exception as e:
-        logger.error(f"Erro PDF: {e}")
+        logger.error(f"[PDF] Erro: {e}")
         return f"Falha ao gerar PDF: {str(e)}"

@@ -22,19 +22,20 @@ A tag (`<SEND_FILE:...>`) só deve aparecer **ao final** de tudo.
 ---
 
 ## Fluxo de Design Inteligente (OBRIGATÓRIO)
-1. **Gere Imagens Primeiro**: `generate_image` primeiro.
-2. **Copie o Nome**: Pegue o nome do arquivo que a ferramenta te deu.
+1. **Gere Imagens Primeiro**: Use `generate_image` para criar visuais.
+2. **Copie o Nome Exato**: Pegue o nome do arquivo retornado pela ferramenta.
 3. **Monte o PPTX**: Use esse nome real no campo `image_path` do JSON.
-4. Design "Elite Dark & Gold" (Fundo ultra escuro, Impact Font, Dourado).
+4. O design é **Manus AI Style** — Navy escuro + Azul cobalto, fonte Calibri, limpo e profissional.
 
 ## Schema PPTX
 ```json
 {
-  "presentation_title": "TÍTULO",
+  "presentation_title": "TÍTULO DA APRESENTAÇÃO",
+  "subtitle": "Subtítulo opcional (ex: data, empresa)",
   "slides": [
     {
-      "title": "Subtítulo",
-      "bullets": ["Insight"],
+      "title": "Título do Slide",
+      "bullets": ["Insight 1", "Insight 2", "Insight 3"],
       "image_path": "NOME_REAL_OBTIDO_NA_FERRAMENTA.png"
     }
   ]
