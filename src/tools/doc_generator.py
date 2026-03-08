@@ -2,11 +2,14 @@ from langchain_core.tools import tool
 import os
 import re
 import uuid
+import logging
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from fpdf import FPDF
 from src.config import settings
+
+logger = logging.getLogger(__name__)
 
 # --- Cores Executivas ---
 AZUL_EXEC = RGBColor(31, 73, 125)
@@ -45,15 +48,7 @@ def _parse_markdown_to_docx(doc: Document, content: str):
 
 @tool
 async def generate_docx(title: str, content: str) -> str:
-    """Cria um documento Word (.docx) com design executivo profissional.
-
-    O parametro 'content' deve ser texto rico em Markdown com pelo menos 4-6 secoes:
-    - Use '# Titulo' para secoes principais
-    - Use '## Subtitulo' para subsecoes
-    - Use '**negrito**' para termos importantes
-    - Use '- item' para listas
-    Gere conteudo real, detalhado e especifico. Nao use placeholders genericos.
-    """
+    """Cria um documento Word (.docx) com design executivo profissional."""
     try:
         clean_title = re.sub(r'[^\w\s-]', '', title).strip().lower().replace(' ', '_')
         filename = f"{uuid.uuid4().hex[:6]}_{clean_title}.docx"
@@ -69,64 +64,67 @@ async def generate_docx(title: str, content: str) -> str:
     except Exception as e:
         return f"Falha ao gerar DOCX: {str(e)}"
 
-def _parse_markdown_to_pdf(pdf: FPDF, content: str):
-    """Aplica design moderno no PDF."""
-    lines = content.split('\n')
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            pdf.ln(4)
-            continue
-        
-        safe = stripped.encode('latin-1', 'replace').decode('latin-1')
-        
-        if stripped.startswith('# ') and not stripped.startswith('## '):
-            pdf.set_text_color(31, 73, 125)
-            pdf.set_font("Helvetica", style='B', size=18)
-            pdf.multi_cell(0, 12, safe[2:])
-            pdf.set_draw_color(31, 73, 125)
-            pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-            pdf.ln(4)
-        elif stripped.startswith('## '):
-            pdf.set_text_color(80, 80, 80)
-            pdf.set_font("Helvetica", style='B', size=14)
-            pdf.multi_cell(0, 10, safe[3:])
-            pdf.ln(2)
-        elif stripped.startswith('- ') or stripped.startswith('* '):
-            pdf.set_text_color(0, 0, 0)
-            pdf.set_font("Helvetica", size=11)
-            pdf.cell(10)
-            pdf.multi_cell(0, 7, f"- {safe[2:]}")
-        else:
-            pdf.set_text_color(0, 0, 0)
-            pdf.set_font("Helvetica", size=11)
-            pdf.multi_cell(0, 7, safe)
-            pdf.ln(2)
+class ArthPDF(FPDF):
+    def header(self):
+        self.set_font("Helvetica", "B", 10)
+        self.set_text_color(150, 150, 150)
+        self.cell(0, 10, "ARTH EXECUTIVE | CONFIDENTIAL", 0, 1, "R")
+        self.ln(5)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font("Helvetica", "I", 8)
+        self.cell(0, 10, f"Page {self.page_no()}", 0, 0, "C")
 
 @tool
 async def generate_pdf(title: str, content: str) -> str:
-    """Cria um documento PDF com visual limpo e profissional.
-
-    O parametro 'content' deve ser texto rico em Markdown com pelo menos 4-6 secoes:
-    - Use '# Titulo' para secoes principais
-    - Use '## Subtitulo' para subsecoes
-    - Use '- item' para listas
-    Gere conteudo real, detalhado e especifico. Nao use placeholders genericos.
-    """
+    """Cria um documento PDF com visual executivo e suporte total a UTF-8."""
     try:
         clean_title = re.sub(r'[^\w\s-]', '', title).strip().lower().replace(' ', '_')
         filename = f"{uuid.uuid4().hex[:6]}_{clean_title}.pdf"
         filepath = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
         
-        pdf = FPDF()
+        pdf = ArthPDF()
         pdf.add_page()
-        pdf.set_font("Helvetica", style='B', size=24)
+        
+        # Título Principal
+        pdf.set_font("Helvetica", "B", 24)
         pdf.set_text_color(31, 73, 125)
-        pdf.cell(0, 20, title.encode('latin-1', 'replace').decode('latin-1'), ln=True, align='C')
+        pdf.multi_cell(0, 20, title, align='C')
         pdf.ln(10)
         
-        _parse_markdown_to_pdf(pdf, content)
+        # Conteúdo
+        lines = content.split('\n')
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                pdf.ln(4)
+                continue
+            
+            if stripped.startswith('# ') and not stripped.startswith('## '):
+                pdf.set_font("Helvetica", "B", 16)
+                pdf.set_text_color(31, 73, 125)
+                pdf.multi_cell(0, 12, stripped[2:])
+                pdf.set_draw_color(31, 73, 125)
+                pdf.line(pdf.get_x(), pdf.get_y(), 200, pdf.get_y())
+                pdf.ln(4)
+            elif stripped.startswith('## '):
+                pdf.set_font("Helvetica", "B", 13)
+                pdf.set_text_color(80, 80, 80)
+                pdf.multi_cell(0, 10, stripped[3:])
+                pdf.ln(2)
+            elif stripped.startswith('- ') or stripped.startswith('* '):
+                pdf.set_font("Helvetica", "", 11)
+                pdf.set_text_color(0, 0, 0)
+                pdf.multi_cell(0, 7, f"  • {stripped[2:]}")
+            else:
+                pdf.set_font("Helvetica", "", 11)
+                pdf.set_text_color(0, 0, 0)
+                pdf.multi_cell(0, 7, stripped)
+                pdf.ln(2)
+                
         pdf.output(filepath)
-        return f"PDF profissional gerado com sucesso: <SEND_FILE:{filename}>"
+        return f"PDF Executivo gerado com sucesso: <SEND_FILE:{filename}>"
     except Exception as e:
+        logger.error(f"Erro PDF: {e}")
         return f"Falha ao gerar PDF: {str(e)}"
