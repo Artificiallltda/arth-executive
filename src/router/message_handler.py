@@ -93,7 +93,8 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
                 "arth_analyst": "Analisando dados e faturamentos... 📊⏳",
                 "arth_qa": "Revisando a qualidade técnica... 🛡️⏳",
             }
-            SPECIALIST_NODES = {"arth_executor", "arth_researcher", "arth_analyst"}
+            # Todos os nós que podem emitir respostas finais (inclui orchestrator para respostas diretas)
+            SPECIALIST_NODES = {"arth_executor", "arth_researcher", "arth_analyst", "arth_planner", "arth_qa", "arth_orchestrator"}
 
             sent_etas = set()
             collected_tags = []        # tags capturadas durante o stream

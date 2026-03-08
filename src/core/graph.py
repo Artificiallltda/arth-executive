@@ -116,6 +116,18 @@ async def agent_node(state, agent, name):
         if missing:
             msg = msg.model_copy(update={"content": msg_content + "\n" + "\n".join(missing)})
 
+    # Remove SEND_FILE tags que apontam para arquivos inexistentes (previne alucinação de filenames).
+    if isinstance(msg.content, str) and "<SEND_FILE:" in msg.content:
+        def _check_tag(m):
+            fp = os.path.join(settings.DATA_OUTPUTS_PATH, m.group(1).strip())
+            if os.path.exists(fp):
+                return m.group(0)
+            logger.warning(f"[{name}] SEND_FILE para arquivo inexistente removido: {m.group(1)}")
+            return ""
+        cleaned = re.sub(r'<SEND_FILE:([^>]+)>', _check_tag, msg.content)
+        if cleaned != msg.content:
+            msg = msg.model_copy(update={"content": cleaned})
+
     msg.name = name
     return {
         "messages": [msg],
