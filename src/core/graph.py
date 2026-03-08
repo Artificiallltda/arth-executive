@@ -128,6 +128,20 @@ prompt = ChatPromptTemplate.from_messages([
 supervisor_chain = prompt | llm_with_fallbacks.with_structured_output(RouteResponse)
 
 async def supervisor_node(state: AgentState):
+    messages = list(state.get("messages", []))
+
+    # Guarda: se já foi gerado um arquivo desde o último HumanMessage, encerra imediatamente.
+    # Evita que o orquestrador invoque o executor múltiplas vezes por rodada.
+    last_human_idx = 0
+    for i, m in enumerate(messages):
+        if m.type == "human":
+            last_human_idx = i
+    for m in messages[last_human_idx + 1:]:
+        if m.type == "ai" and getattr(m, "name", "") in members:
+            if any(tag in str(m.content) for tag in ["<SEND_FILE:", "<SEND_AUDIO:"]):
+                logger.info(f"[Supervisor] Arquivo já gerado por {m.name}, encerrando rodada.")
+                return {"next_agent": "FINISH"}
+
     routing_result = await supervisor_chain.ainvoke(state)
     logger.info(f"[ROUTER] Para: {routing_result.next_agent}")
 

@@ -21,14 +21,20 @@ if platform.system() == "Windows":
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Controle de sessão por usuário (reset de histórico)
+# Controle de sessão e lock por usuário
 _session_counters: dict = {}
+_user_locks: dict = {}
 _RESET_KEYWORDS = {"resetar", "reset", "/reset", "limpar histórico", "limpar historico", "nova conversa", "começar do zero", "comecar do zero"}
 
 def _get_thread_id(channel: str, user_id: str) -> str:
     key = f"{channel}_{user_id}"
     counter = _session_counters.get(key, 0)
     return f"{key}_s{counter}" if counter > 0 else key
+
+def _get_user_lock(thread_key: str) -> asyncio.Lock:
+    if thread_key not in _user_locks:
+        _user_locks[thread_key] = asyncio.Lock()
+    return _user_locks[thread_key]
 
 def _reset_session(channel: str, user_id: str):
     key = f"{channel}_{user_id}"
@@ -49,88 +55,79 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
         _reset_session(channel, user_id)
         return "Histórico apagado! Pode começar uma nova conversa do zero."
 
+    thread_key = _get_thread_id(channel, user_id)
     config = {
-        "configurable": {"thread_id": _get_thread_id(channel, user_id), "user_name": user_name},
+        "configurable": {"thread_id": thread_key, "user_name": user_name},
         "recursion_limit": 50
     }
-    
-    try:
-        brain = await engine.get_brain()
 
-        content = text
-        if media_b64:
-            content = [
-                {"type": "text", "text": text},
-                {"type": "text", "text": "\n[SISTEMA: O Usuário enviou mídia de referência. Use-a se necessário.]"}
-            ]
+    # Lock por usuário: evita que mensagens simultâneas conflitem no mesmo thread_id
+    # (geração de imagem leva ~60s — sem lock, a 2ª mensagem corromperia o estado)
+    async with _get_user_lock(thread_key):
+        try:
+            brain = await engine.get_brain()
 
-        initial_state = {
-            "messages": [HumanMessage(content=content)],
-            "user_id": str(user_id),
-            "channel": channel,
-            "media_context": media_b64,
-        }
+            content = text
+            if media_b64:
+                content = [
+                    {"type": "text", "text": text},
+                    {"type": "text", "text": "\n[SISTEMA: O Usuário enviou mídia de referência. Use-a se necessário.]"}
+                ]
 
-        sent_etas = set()
-        async for event in brain.astream(initial_state, config=config):
-            for node, state_update in event.items():
-                status_messages = {
-                    "arth_researcher": "Pesquisando dados relevantes... 🔍⏳",
-                    "arth_executor": "Executando ferramentas e gerando artefatos... 💻⏳",
-                    "arth_planner": "Estruturando o plano de ação... 📋⏳",
-                    "arth_analyst": "Analisando dados e faturamentos... 📊⏳",
-                    "arth_qa": "Revisando a qualidade técnica... 🛡️⏳"
-                }
-                if node in status_messages and node not in sent_etas:
-                    if status_callback: await status_callback(status_messages[node])
-                    sent_etas.add(node)
+            initial_state = {
+                "messages": [HumanMessage(content=content)],
+                "user_id": str(user_id),
+                "channel": channel,
+                "media_context": media_b64,
+            }
 
-        # --- RESULTADO FINAL INTELIGENTE E ROBUSTO ---
-        final_state = await brain.aget_state(config)
-        messages = final_state.values.get("messages", [])
+            STATUS_NODES = {
+                "arth_researcher": "Pesquisando dados relevantes... 🔍⏳",
+                "arth_executor": "Executando ferramentas e gerando artefatos... 💻⏳",
+                "arth_planner": "Estruturando o plano de ação... 📋⏳",
+                "arth_analyst": "Analisando dados e faturamentos... 📊⏳",
+                "arth_qa": "Revisando a qualidade técnica... 🛡️⏳",
+            }
+            SPECIALIST_NODES = {"arth_executor", "arth_researcher", "arth_analyst"}
 
-        # 1. Coleta tags de mídia APENAS do exchange atual (após o último HumanMessage)
-        # Evita re-enviar arquivos de conversas anteriores no histórico
-        last_human_idx = 0
-        for i, m in enumerate(messages):
-            if m.type == "human":
-                last_human_idx = i
-        current_exchange = messages[last_human_idx + 1:]
+            sent_etas = set()
+            collected_tags = []        # tags capturadas durante o stream
+            last_specialist_text = None
 
-        all_tags = []
-        for m in current_exchange:
-            content_str = str(m.content)
-            found = re.findall(r'(?:SEND_FILE|SEND_AUDIO):[^> \n`]+', content_str)
-            for f in found:
-                all_tags.append(f"<{f}>")
+            async for event in brain.astream(initial_state, config=config):
+                for node, state_update in event.items():
+                    # Status callback — uma única vez por nó
+                    if node in STATUS_NODES and node not in sent_etas:
+                        if status_callback:
+                            await status_callback(STATUS_NODES[node])
+                        sent_etas.add(node)
 
-        unique_tags = list(dict.fromkeys(all_tags))
+                    # Captura tags e texto dos especialistas direto do delta do stream
+                    for msg in state_update.get("messages", []):
+                        if not hasattr(msg, "content") or not msg.content:
+                            continue
+                        content_str = str(msg.content)
+                        tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):[^>]+>', content_str)
+                        collected_tags.extend(tags)
+                        if node in SPECIALIST_NODES:
+                            last_specialist_text = content_str
 
-        # 2. Busca a resposta textual da IA
-        last_ai_msg = None
-        for m in reversed(messages):
-            if m.type == "ai":
-                if getattr(m, "name", "") in ["arth_executor", "arth_researcher", "arth_analyst"] and m.content:
-                    last_ai_msg = m.content
-                    break
-                if last_ai_msg is None and m.content:
-                    last_ai_msg = m.content
+            # Monta resposta final
+            final_response = last_specialist_text or "Tarefa concluída."
+            final_response = re.sub(r'!?\[.*?\]\(.*?\)', '', final_response).strip()
 
-        final_response = last_ai_msg or "Tarefa concluída."
-        
-        # Limpeza Anti-Hallucinação: remove [links] e !images markdown que o LLM ousar criar
-        final_response = re.sub(r'!?\[.*?\]\(.*?\)', '', str(final_response))
-        
-        # 3. Garante que as tags de mídia reais estejam presentes
-        for tag in unique_tags:
-            if tag not in final_response:
-                final_response += f"\n{tag}"
-        
-        return final_response
-            
-    except Exception as e:
-        logger.error(f"Erro no execute_brain: {e}", exc_info=True)
-        return f"Ops, a Squad Executiva teve uma falha técnica: {str(e)}"
+            # Garante que todas as tags capturadas no stream estejam na resposta (sem duplicatas)
+            unique_tags = list(dict.fromkeys(collected_tags))
+            for tag in unique_tags:
+                if tag not in final_response:
+                    final_response += f"\n{tag}"
+
+            logger.info(f"[Brain] Resposta final pronta. Tags={unique_tags}")
+            return final_response
+
+        except Exception as e:
+            logger.error(f"Erro no execute_brain: {e}", exc_info=True)
+            return f"Ops, a Squad Executiva teve uma falha técnica: {str(e)}"
 
 # --- WEBHOOKS RESTAURADOS ---
 
