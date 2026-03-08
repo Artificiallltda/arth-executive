@@ -107,20 +107,40 @@ def _build_content(prs, title, bullets, img_path=None):
     # Imagem (se informada)
     has_image = False
     if img_path:
-        clean = str(img_path).split(":")[-1].replace(">", "").strip()
-        full_path = os.path.join(settings.DATA_OUTPUTS_PATH, clean)
-        if os.path.exists(full_path):
+        # Extrai apenas o nome do arquivo se vier dentro de uma tag <SEND_FILE:...>
+        clean_name = str(img_path)
+        tag_match = re.search(r'<SEND_FILE:([^>]+)>', clean_name)
+        if tag_match:
+            clean_name = tag_match.group(1).strip()
+        else:
+            clean_name = clean_name.replace("SEND_FILE:", "").replace("<", "").replace(">", "").strip()
+
+        # Tenta o nome direto e variantes de hífen/sublinhado
+        variants = [
+            clean_name,
+            clean_name.replace("-", "_"),
+            clean_name.replace("_", "-")
+        ]
+
+        found_path = None
+        for v in variants:
+            full_path = os.path.join(settings.DATA_OUTPUTS_PATH, v)
+            if os.path.exists(full_path):
+                found_path = full_path
+                logger.info(f"[PPTX] Imagem encontrada: {v}")
+                break
+
+        if found_path:
             try:
                 slide.shapes.add_picture(
-                    full_path, Inches(0.4), Inches(1.1),
+                    found_path, Inches(0.4), Inches(1.1),
                     width=Inches(5.9), height=Inches(5.7)
                 )
                 has_image = True
-                logger.info(f"[PPTX] Imagem inserida: {clean}")
             except Exception as e:
-                logger.error(f"[PPTX] Erro ao inserir imagem {clean}: {e}")
+                logger.error(f"[PPTX] Erro ao inserir imagem {found_path}: {e}")
         else:
-            logger.warning(f"[PPTX] Imagem não encontrada: {full_path}")
+            logger.warning(f"[PPTX] Nenhuma variante de imagem encontrada para: {clean_name}")
 
     # Área de texto
     txt_l = Inches(6.6) if has_image else Inches(0.65)

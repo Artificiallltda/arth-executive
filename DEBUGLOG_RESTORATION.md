@@ -56,4 +56,14 @@ Telegram enviava mídias como documentos genéricos, sem visualização prévia.
 Implementado método `send_telegram_photo` usando a API oficial do Telegram para abrir imagens diretamente no chat.
 
 ---
+---
 **Status Final:** Sistema estabilizado, segurança resiliente e mídias restauradas. Pronto para revisão de AIOS.
+
+## 6. Blindagem de Skills Homologadas (08 de Março de 2026)
+### Funcionalidades Blindadas
+- **Geração de Imagens**: Estabilizada com `gemini-3.1-flash-image-preview`. Estética executiva 8k. **NÃO ALTERAR**.
+- **Documentos (DOCX/PDF)**: Padronização de nomes com hífens (`hex-nome.ext`) e conversão Markdown-to-RichText. **NOMEAÇÃO BLINDADA**.
+- **Mensagem de Apresentação (Manus AI Style)**: Fluxo de preservação de tags no handler e orquestrador garantido. O Executor deve sempre introduzir o arquivo com tom de consultoria premium.
+- **Resiliência de Tags**: O `agent_node` no `graph.py` agora suporta variações de hífens/sublinhados para evitar a remoção acidental de anexos.
+
+**Nota:** Qualquer tentativa de reverter para sublinhados (_) ou remover a lógica de verificação resiliente deve ser bloqueada.
