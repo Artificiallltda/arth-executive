@@ -57,12 +57,21 @@ async def generate_pptx(slides_content_json: str) -> str:
             img_path = s_data.get("image_path")
             has_image = False
             if img_path:
-                clean_path = str(img_path).replace("<SEND_FILE:", "").replace(">", "").strip()
+                # Limpeza agressiva da tag
+                clean_path = str(img_path).split(":")[-1].replace(">", "").strip()
                 full_img_path = os.path.join(settings.DATA_OUTPUTS_PATH, clean_path)
+                logger.info(f"[PPTX] Tentando carregar imagem: {full_img_path}")
+                
                 if os.path.exists(full_img_path):
-                    # Forçar imagem na esquerda para testar mudança de layout
-                    slide.shapes.add_picture(full_img_path, Inches(0.5), Inches(1.5), width=Inches(6), height=Inches(5))
-                    has_image = True
+                    try:
+                        # Forçar imagem na esquerda para design side-by-side
+                        slide.shapes.add_picture(full_img_path, Inches(0.5), Inches(1.5), width=Inches(6), height=Inches(5))
+                        has_image = True
+                        logger.info(f"[PPTX] Imagem inserida: {clean_path}")
+                    except Exception as img_err:
+                        logger.error(f"[PPTX] Erro ao inserir imagem {clean_path}: {img_err}")
+                else:
+                    logger.warning(f"[PPTX] Imagem não encontrada fisicamente: {full_img_path}")
 
             # Texto (Sempre na direita se houver imagem)
             left_pos = Inches(7) if has_image else Inches(1)
