@@ -86,6 +86,20 @@ async def agent_node(state, agent, name):
     inner_messages = result["messages"]
     msg = inner_messages[-1]
 
+    # Normaliza content de modelos com blocos estruturados (ex: Gemini 2.5 thinking mode).
+    # Sem isso, msg.content vira {'type': 'text', 'text': '...', 'extras': {...}} em string crua.
+    if not isinstance(msg.content, str):
+        if isinstance(msg.content, list):
+            text_parts = [b.get('text', '') for b in msg.content
+                          if isinstance(b, dict) and b.get('type') == 'text']
+            clean = '\n'.join(filter(None, text_parts))
+        elif isinstance(msg.content, dict) and msg.content.get('type') == 'text':
+            clean = msg.content.get('text', '')
+        else:
+            clean = str(msg.content)
+        if clean:
+            msg = msg.model_copy(update={"content": clean})
+
     # Garante que tags de arquivo/áudio geradas por ferramentas cheguem ao estado externo.
     # Escaneia APENAS ToolMessages (resultados das ferramentas desta execução),
     # não o histórico de mensagens que pode conter tags de conversas anteriores.

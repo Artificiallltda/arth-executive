@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from langchain_core.tools import tool
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 
 logger = logging.getLogger(__name__)
 
@@ -13,13 +13,25 @@ async def search_web(query: str, max_results: int = 8) -> str:
     try:
         logger.info(f"[WebSearch] Pesquisando: {query}")
 
-        # DDGS é síncrono — rodar em thread separada para não bloquear o event loop
+        # DDGS é síncrono — rodar em thread para não bloquear o event loop
         def _run_search():
             with DDGS() as ddgs:
                 gen = ddgs.text(query, max_results=max_results)
                 return list(gen) if gen else []
 
-        results = await asyncio.to_thread(_run_search)
+        # Tenta até 3 vezes com pausa entre tentativas (DuckDuckGo pode rate-limitar)
+        results = []
+        for attempt in range(3):
+            try:
+                results = await asyncio.to_thread(_run_search)
+                if results:
+                    break
+                if attempt < 2:
+                    await asyncio.sleep(1.5)
+            except Exception as e:
+                logger.warning(f"[WebSearch] Tentativa {attempt + 1} falhou: {e}")
+                if attempt < 2:
+                    await asyncio.sleep(2.0)
 
         if not results:
             return f"Nenhuma informacao recente encontrada para: {query}"
@@ -34,5 +46,5 @@ async def search_web(query: str, max_results: int = 8) -> str:
 
         return "\n".join(formatted_results)
     except Exception as e:
-        logger.error(f"[WebSearch] Falha: {e}")
+        logger.error(f"[WebSearch] Falha total: {e}")
         return f"Erro na pesquisa em tempo real: {str(e)}"
