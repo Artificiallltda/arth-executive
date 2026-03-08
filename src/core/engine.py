@@ -51,7 +51,7 @@ class ArthEngine:
                             max_size=20,
                             kwargs={
                                 "autocommit": True,
-                                "prepare_threshold": 0,
+                                "prepare_threshold": None,
                             },
                             open=False,
                         )
