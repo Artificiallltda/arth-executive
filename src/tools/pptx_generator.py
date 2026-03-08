@@ -52,32 +52,37 @@ async def generate_pptx(slides_content_json: str) -> str:
             slide = prs.slides.add_slide(prs.slide_layouts[6])
             _apply_dark_theme(slide)
             
-            # Título
-            tx_title = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(12), Inches(1))
+            # Título (Mais alto e centralizado)
+            tx_title = slide.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(12.3), Inches(0.8))
             p_title = tx_title.text_frame.paragraphs[0]
             p_title.text = s_data.get("title", "").upper()
-            _style_run(p_title.runs[0], 32, True, ACCENT_COLOR)
+            _style_run(p_title.runs[0], 36, True, ACCENT_COLOR) # Fonte levemente maior
+            p_title.alignment = 1 # Centralizar
 
-            # Imagem (se houver) -> Layout Side-by-Side
             img_path = s_data.get("image_path")
             has_image = False
             if img_path:
-                full_img_path = os.path.join(settings.DATA_OUTPUTS_PATH, img_path.replace("<SEND_FILE:", "").replace(">", ""))
+                clean_path = img_path.replace("<SEND_FILE:", "").replace(">", "").strip()
+                full_img_path = os.path.join(settings.DATA_OUTPUTS_PATH, clean_path)
                 if os.path.exists(full_img_path):
-                    slide.shapes.add_picture(full_img_path, Inches(7), Inches(1.5), height=Inches(5))
+                    # Imagem à direita, com borda sutil se possível (ou apenas posicionada)
+                    slide.shapes.add_picture(full_img_path, Inches(6.8), Inches(1.2), width=Inches(6), height=Inches(5.5))
                     has_image = True
 
-            # Texto
-            width = Inches(6) if has_image else Inches(11)
-            tx_body = slide.shapes.add_textbox(Inches(0.5), Inches(1.5), width, Inches(5))
+            # Texto (Ajustado se houver imagem)
+            text_width = Inches(5.8) if has_image else Inches(11.5)
+            tx_body = slide.shapes.add_textbox(Inches(0.5), Inches(1.2), text_width, Inches(5.5))
             tf_body = tx_body.text_frame
             tf_body.word_wrap = True
             
-            for i, bullet in enumerate(s_data.get("bullets", [])):
+            bullets = s_data.get("bullets", [])
+            for i, bullet in enumerate(bullets):
                 p = tf_body.paragraphs[0] if i == 0 else tf_body.add_paragraph()
-                p.text = f"• {bullet}"
-                _style_run(p.runs[0], 20, rgb=RGBColor(220, 220, 220))
-                p.space_after = Pt(12)
+                p.text = str(bullet)
+                if p.runs:
+                    _style_run(p.runs[0], 22, rgb=RGBColor(240, 240, 240))
+                p.space_after = Pt(15)
+                p.level = 0
 
         prs.save(filepath)
         return f"Apresentação Premium gerada: <SEND_FILE:{filename}>"
