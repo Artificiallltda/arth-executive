@@ -89,15 +89,21 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
         final_state = await brain.aget_state(config)
         messages = final_state.values.get("messages", [])
 
-        # 1. Coleta todas as tags de mídias geradas nesta thread (Busca agressiva)
+        # 1. Coleta tags de mídia APENAS do exchange atual (após o último HumanMessage)
+        # Evita re-enviar arquivos de conversas anteriores no histórico
+        last_human_idx = 0
+        for i, m in enumerate(messages):
+            if m.type == "human":
+                last_human_idx = i
+        current_exchange = messages[last_human_idx + 1:]
+
         all_tags = []
-        for m in messages:
+        for m in current_exchange:
             content_str = str(m.content)
-            # Detecta tags mesmo se o LLM as envolveu em lixo ou backticks
             found = re.findall(r'(?:SEND_FILE|SEND_AUDIO):[^> \n`]+', content_str)
             for f in found:
                 all_tags.append(f"<{f}>")
-        
+
         unique_tags = list(dict.fromkeys(all_tags))
 
         # 2. Busca a resposta textual da IA
