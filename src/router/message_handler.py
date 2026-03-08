@@ -37,65 +37,38 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
     
     try:
         brain = await engine.get_brain()
-        state = await brain.aget_state(config)
-        
-        # Lógica de Aprovação (HITL)
-        approval_keywords = ["sim", "ok", "pode", "pode ir", "autorizado", "vai", "autorizo", "fechado"]
-        is_approval = any(word in text.lower().strip() for word in approval_keywords)
 
-        # --- RETOMADA POR APROVAÇÃO ---
-        if state.next and "arth_approval" in state.next and is_approval:
-            logger.info(f"[HITL] Retomando execução aprovada para {user_id}")
-            if status_callback: await status_callback("Aprovação confirmada! Prosseguindo... 🚀⚙️")
-            
-            # Atualiza o estado para marcar como aprovado e continua
-            await brain.aupdate_state(config, {"approval_status": "approved", "messages": [HumanMessage(content=text)]})
-            
-            async for event in brain.astream(None, config=config):
-                for node, _ in event.items():
-                    logger.debug(f"[Grafo] Executando nó: {node}")
-        
-        # --- NOVO CICLO DE MENSAGEM ---
-        else:
-            content = text
-            if media_b64:
-                content = [
-                    {"type": "text", "text": text},
-                    {"type": "text", "text": f"\n[SISTEMA: O Usuário enviou mídia de referência. Use-a se necessário.]"}
-                ]
+        content = text
+        if media_b64:
+            content = [
+                {"type": "text", "text": text},
+                {"type": "text", "text": "\n[SISTEMA: O Usuário enviou mídia de referência. Use-a se necessário.]"}
+            ]
 
-            initial_state = {
-                "messages": [HumanMessage(content=content)],
-                "user_id": str(user_id),
-                "channel": channel,
-                "media_context": media_b64,
-                "approval_status": "none"
-            }
-            
-            sent_etas = set()
-            async for event in brain.astream(initial_state, config=config):
-                for node, state_update in event.items():
-                    # RESTAURAÇÃO DAS ETAS
-                    status_messages = {
-                        "arth_researcher": "Pesquisando dados relevantes... 🔍⏳",
-                        "arth_executor": "Executando ferramentas e gerando artefatos... 💻⏳",
-                        "arth_planner": "Estruturando o plano de ação... 📋⏳",
-                        "arth_analyst": "Analisando dados e faturamentos... 📊⏳",
-                        "arth_qa": "Revisando a qualidade técnica... 🛡️⏳"
-                    }
-                    if node in status_messages and node not in sent_etas:
-                        if status_callback: await status_callback(status_messages[node])
-                        sent_etas.add(node)
-        
+        initial_state = {
+            "messages": [HumanMessage(content=content)],
+            "user_id": str(user_id),
+            "channel": channel,
+            "media_context": media_b64,
+        }
+
+        sent_etas = set()
+        async for event in brain.astream(initial_state, config=config):
+            for node, state_update in event.items():
+                status_messages = {
+                    "arth_researcher": "Pesquisando dados relevantes... 🔍⏳",
+                    "arth_executor": "Executando ferramentas e gerando artefatos... 💻⏳",
+                    "arth_planner": "Estruturando o plano de ação... 📋⏳",
+                    "arth_analyst": "Analisando dados e faturamentos... 📊⏳",
+                    "arth_qa": "Revisando a qualidade técnica... 🛡️⏳"
+                }
+                if node in status_messages and node not in sent_etas:
+                    if status_callback: await status_callback(status_messages[node])
+                    sent_etas.add(node)
+
         # --- RESULTADO FINAL INTELIGENTE E ROBUSTO ---
         final_state = await brain.aget_state(config)
         messages = final_state.values.get("messages", [])
-        
-        if final_state.next and "arth_approval" in final_state.next:
-            return (
-                "[⚠️ Ação Crítica] Esta tarefa exige execução de comandos ou agendamentos.\n\n"
-                "**Você autoriza o Arth a prosseguir?** (Responda 'Sim' ou 'Ok')"
-            )
 
         # 1. Coleta todas as tags de mídias geradas nesta thread (Busca agressiva)
         all_tags = []

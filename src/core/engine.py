@@ -37,9 +37,7 @@ class ArthEngine:
             workflow = build_arth_graph()
 
             # Configurações universais de compilação
-            compile_kwargs = {
-                "interrupt_before": ["arth_approval"]
-            }
+            compile_kwargs = {}
 
             # Persistência Cloud (Supabase / Postgres)
             if settings.SUPABASE_DATABASE_URL:

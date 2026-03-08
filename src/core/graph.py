@@ -97,101 +97,39 @@ async def analyst_node(state): return await agent_node(state, analyst_agent, "ar
 
 # --- Orquestrador (Supervisor) ---
 members = ["arth_researcher", "arth_planner", "arth_executor", "arth_qa", "arth_analyst"]
-options = ["FINISH", "arth_approval"] + members
+options = ["FINISH"] + members
 
 class RouteResponse(BaseModel):
-    next_agent: Literal["FINISH", "arth_researcher", "arth_planner", "arth_executor", "arth_qa", "arth_analyst", "arth_approval"]
+    next_agent: Literal["FINISH", "arth_researcher", "arth_planner", "arth_executor", "arth_qa", "arth_analyst"]
     final_answer: Optional[str] = ""
-    requires_approval: bool = False
 
 orchestrator_persona = load_persona("orchestrator.md")
-# Melhoramos o prompt para ser mais explícito com as regras de segurança
 prompt = ChatPromptTemplate.from_messages([
     ("system", orchestrator_persona),
     MessagesPlaceholder(variable_name="messages"),
-    ("system", (
-        "Quem deve atuar agora? Escolha um de: {options}.\n\n"
-        "REGRA DE OURO DE SEGURANÇA:\n"
-        "Se a próxima ação for para o @arth-executor e envolver IMAGENS, PYTHON ou AGENDAMENTOS, "
-        "defina 'requires_approval=True' IMEDIATAMENTE. Não pule esta etapa."
-    )),
+    ("system", "Quem deve atuar agora? Escolha um de: {options}."),
 ]).partial(options=str(options), members=", ".join(members))
 
 supervisor_chain = prompt | llm_with_fallbacks.with_structured_output(RouteResponse)
 
 async def supervisor_node(state: AgentState):
-    is_approved = state.get("approval_status") == "approved"
-    messages = list(state.get("messages", []))
-    
-    # --- CAMADA DE SEGURANÇA INTELIGENTE ---
-    # Busca gatilho apenas na última interação humana para evitar loops com histórico antigo
-    last_human_msg = next((m for m in reversed(messages) if m.type == "human"), None)
-    found_trigger = False
-    if last_human_msg:
-        critical_triggers = ["imagem", "image", "gerar", "crie", "create", "pdf", "docx", "pptx", "python", "agende", "lembrete", "reminder"]
-        found_trigger = any(t in str(last_human_msg.content).lower() for t in critical_triggers)
-    
-    # Se já houve uma execução de ferramenta com sucesso (tag de arquivo presente), não bloqueia
-    has_file = any("<SEND_FILE:" in str(m.content) for m in messages if m.type == "ai")
-    
-    needs_hard_approval = found_trigger and not is_approved and not has_file
+    routing_result = await supervisor_chain.ainvoke(state)
+    logger.info(f"[ROUTER] Para: {routing_result.next_agent}")
 
-    if is_approved:
-        messages.append(SystemMessage(content="SISTEMA: Ação já autorizada pelo usuário. Prossiga para a execução."))
-
-    # Chamada do modelo de roteamento com limite expandido
-    routing_result = await supervisor_chain.ainvoke({**state, "messages": messages})
-
-    # Força a rota de aprovação se necessário
-    if needs_hard_approval and routing_result.next_agent == "arth_executor":
-        routing_result.next_agent = "arth_approval"
-        routing_result.requires_approval = True
-
-    # Bypass Absoluto: Se já aprovado, nunca mais pede aprovação nesta thread
-    if is_approved:
-        routing_result.requires_approval = False
-        if routing_result.next_agent == "arth_approval":
-            routing_result.next_agent = "arth_executor"
-
-    logger.info(f"[ROUTER] De: supervisor | Para: {routing_result.next_agent} | Approval: {routing_result.requires_approval}")
-
-    # --- LÓGICA DE FINALIZAÇÃO (Preserva Mídias e Evita Hallucinação) ---
     if routing_result.next_agent == "FINISH":
-        # Procura a última mensagem de um especialista que contenha uma tag
+        messages = list(state.get("messages", []))
         last_specialist_msg = next((m for m in reversed(messages) if m.type == "ai" and m.name in members), None)
-        
+
         if last_specialist_msg and any(tag in str(last_specialist_msg.content) for tag in ["<SEND_FILE:", "<SEND_AUDIO:"]):
             logger.info(f"[Supervisor] Finalizando com mídia detectada em {last_specialist_msg.name}")
-            return {"next_agent": "FINISH", "requires_approval": False}
-        
+            return {"next_agent": "FINISH"}
+
         return {
-            "next_agent": "FINISH", 
-            "requires_approval": False,
+            "next_agent": "FINISH",
             "messages": [AIMessage(content=routing_result.final_answer or "Tarefa concluída.", name="arth_orchestrator")]
         }
-    
-    # --- ROTA DE APROVAÇÃO ---
-    if routing_result.requires_approval:
-        logger.warning("[⚠️ HITL] Bloqueio preventivo. Aguardando aprovação explícita.")
-        content = "[⚠️ Ação Crítica] Esta tarefa exige execução de comandos.\n\n**Você autoriza o Arth a prosseguir?** (Responda 'Sim' ou 'Ok')"
-        return {
-            "next_agent": "arth_approval", 
-            "requires_approval": True,
-            "messages": [AIMessage(content=content, name="arth_orchestrator")]
-        }
-        
-    return {
-        "next_agent": routing_result.next_agent, 
-        "requires_approval": False, # Reset obrigatório
-        "approval_status": "approved" if is_approved else "none"
-    }
 
-async def approval_node(state: AgentState):
-    return {
-        "approval_status": "approved", 
-        "requires_approval": False, # Fundamental para quebrar o loop
-        "messages": [AIMessage(content="Autorização confirmada! Prosseguindo... 🚀⚙️", name="arth_approval")]
-    }
+    return {"next_agent": routing_result.next_agent}
 
 def build_arth_graph():
     workflow = StateGraph(AgentState)
@@ -201,16 +139,14 @@ def build_arth_graph():
     workflow.add_node("arth_executor", executor_node)
     workflow.add_node("arth_qa", qa_node)
     workflow.add_node("arth_analyst", analyst_node)
-    workflow.add_node("arth_approval", approval_node)
-    
+
     workflow.add_edge(START, "arth_orchestrator")
     for member in members:
         workflow.add_edge(member, "arth_orchestrator")
-    workflow.add_edge("arth_approval", "arth_orchestrator")
-        
+
     workflow.add_conditional_edges(
         "arth_orchestrator",
         lambda state: state["next_agent"],
-        {k: k for k in members} | {"FINISH": END, "arth_approval": "arth_approval"}
+        {k: k for k in members} | {"FINISH": END}
     )
     return workflow
