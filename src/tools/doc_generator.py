@@ -253,7 +253,9 @@ async def generate_pdf(title: str, content: str) -> str:
             else:
                 pdf.set_font("Helvetica", "", 11)
                 pdf.set_text_color(50, 50, 50)
-                pdf.multi_cell(0, 7, _clean(stripped))
+                # Usa a largura efetiva da página para evitar erro de espaço horizontal
+                effective_width = pdf.w - pdf.l_margin - pdf.r_margin
+                pdf.multi_cell(effective_width, 7, _clean(stripped))
                 pdf.ln(2)
 
         pdf.output(filepath)
