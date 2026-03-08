@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 from typing import Literal, Optional, List
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
@@ -82,7 +83,19 @@ async def agent_node(state, agent, name):
         )] + messages
 
     result = await agent.ainvoke({**state, "messages": messages}, RunnableConfig(recursion_limit=25))
-    msg = result["messages"][-1]
+    inner_messages = result["messages"]
+    msg = inner_messages[-1]
+
+    # Garante que tags de arquivo/áudio geradas por ferramentas cheguem ao estado externo.
+    # O LLM às vezes não repete as tags na resposta final — este passo recupera do histórico interno.
+    all_inner_text = " ".join(str(m.content) for m in inner_messages)
+    file_tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):[^>]+>', all_inner_text)
+    if file_tags:
+        msg_content = str(msg.content) if not isinstance(msg.content, str) else msg.content
+        missing = [t for t in file_tags if t not in msg_content]
+        if missing:
+            msg = msg.model_copy(update={"content": msg_content + "\n" + "\n".join(missing)})
+
     msg.name = name
     return {
         "messages": [msg],

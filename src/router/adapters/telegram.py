@@ -52,7 +52,11 @@ async def send_telegram_photo(chat_id: str, file_path: str):
             with open(file_path, "rb") as f:
                 files = {"photo": (os.path.basename(file_path), f)}
                 data = {"chat_id": chat_id}
-                await client.post(url, data=data, files=files, timeout=30.0)
+                resp = await client.post(url, data=data, files=files, timeout=30.0)
+                if resp.status_code != 200:
+                    logger.error(f"[Telegram] sendPhoto falhou: {resp.status_code} - {resp.text[:300]}")
+                else:
+                    logger.info(f"[Telegram] Foto enviada com sucesso para {chat_id}")
         except Exception as e:
             logger.error(f"Falha ao enviar foto Telegram: {e}")
 
