@@ -45,7 +45,15 @@ def _parse_markdown_to_docx(doc: Document, content: str):
 
 @tool
 async def generate_docx(title: str, content: str) -> str:
-    """Cria um documento Word (.docx) com design executivo profissional."""
+    """Cria um documento Word (.docx) com design executivo profissional.
+
+    O parametro 'content' deve ser texto rico em Markdown com pelo menos 4-6 secoes:
+    - Use '# Titulo' para secoes principais
+    - Use '## Subtitulo' para subsecoes
+    - Use '**negrito**' para termos importantes
+    - Use '- item' para listas
+    Gere conteudo real, detalhado e especifico. Nao use placeholders genericos.
+    """
     try:
         clean_title = re.sub(r'[^\w\s-]', '', title).strip().lower().replace(' ', '_')
         filename = f"{uuid.uuid4().hex[:6]}_{clean_title}.docx"
@@ -97,7 +105,14 @@ def _parse_markdown_to_pdf(pdf: FPDF, content: str):
 
 @tool
 async def generate_pdf(title: str, content: str) -> str:
-    """Cria um documento PDF com visual limpo e profissional."""
+    """Cria um documento PDF com visual limpo e profissional.
+
+    O parametro 'content' deve ser texto rico em Markdown com pelo menos 4-6 secoes:
+    - Use '# Titulo' para secoes principais
+    - Use '## Subtitulo' para subsecoes
+    - Use '- item' para listas
+    Gere conteudo real, detalhado e especifico. Nao use placeholders genericos.
+    """
     try:
         clean_title = re.sub(r'[^\w\s-]', '', title).strip().lower().replace(' ', '_')
         filename = f"{uuid.uuid4().hex[:6]}_{clean_title}.pdf"

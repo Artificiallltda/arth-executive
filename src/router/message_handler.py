@@ -21,6 +21,20 @@ if platform.system() == "Windows":
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# Controle de sessão por usuário (reset de histórico)
+_session_counters: dict = {}
+_RESET_KEYWORDS = {"resetar", "reset", "/reset", "limpar histórico", "limpar historico", "nova conversa", "começar do zero", "comecar do zero"}
+
+def _get_thread_id(channel: str, user_id: str) -> str:
+    key = f"{channel}_{user_id}"
+    counter = _session_counters.get(key, 0)
+    return f"{key}_s{counter}" if counter > 0 else key
+
+def _reset_session(channel: str, user_id: str):
+    key = f"{channel}_{user_id}"
+    _session_counters[key] = _session_counters.get(key, 0) + 1
+    logger.info(f"[Reset] Nova sessão iniciada para {key} (sessão {_session_counters[key]})")
+
 async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", status_callback=None, user_name: str = "User", media_data: dict = None):
     """Motor de raciocínio integral com restauração de funcionalidades."""
     logger.info(f"[{channel.upper()}] Processando mensagem de {user_name} ({user_id})")
@@ -30,8 +44,13 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
     if media_data and "b64" in media_data:
         media_b64 = media_data["b64"]
 
+    # Verifica comando de reset antes de qualquer processamento
+    if text.lower().strip() in _RESET_KEYWORDS:
+        _reset_session(channel, user_id)
+        return "Histórico apagado! Pode começar uma nova conversa do zero."
+
     config = {
-        "configurable": {"thread_id": f"{channel}_{user_id}", "user_name": user_name},
+        "configurable": {"thread_id": _get_thread_id(channel, user_id), "user_name": user_name},
         "recursion_limit": 50
     }
     

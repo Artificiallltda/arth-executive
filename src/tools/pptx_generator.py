@@ -30,7 +30,20 @@ def _style_run(run, size_pt, bold=False, rgb=RGBColor(255, 255, 255)):
 
 @tool
 async def generate_pptx(slides_content_json: str) -> str:
-    """Cria uma apresentacao de Slides (.pptx) com design moderno."""
+    """Cria uma apresentacao de Slides (.pptx) com design moderno (fundo escuro, títulos azuis).
+
+    O parametro slides_content_json DEVE ser um JSON com esta estrutura exata:
+    {
+      "presentation_title": "Título da Apresentação",
+      "slides": [
+        {
+          "title": "Título do Slide",
+          "bullets": ["Ponto 1", "Ponto 2", "Ponto 3"]
+        }
+      ]
+    }
+    Crie de 8 a 12 slides com bullets informativos e específicos (3-5 por slide).
+    """
     try:
         filename = f"Apresentacao_{uuid.uuid4().hex[:6]}.pptx"
         filepath = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
