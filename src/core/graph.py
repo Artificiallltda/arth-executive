@@ -136,7 +136,15 @@ async def agent_node(state, agent, name):
 
 async def researcher_node(state): return await agent_node(state, researcher_agent, "arth_researcher")
 async def planner_node(state): return await agent_node(state, planner_agent, "arth_planner")
-async def executor_node(state): return await agent_node(state, executor_agent, "arth_executor")
+async def executor_node(state): 
+    # Injeção de instrução de sistema FORÇADA para evitar alucinação de arquivos
+    new_messages = list(state.get("messages", []))
+    new_messages.append(SystemMessage(content=(
+        "🚨 INSTRUÇÃO DE SEGURANÇA: O usuário fez uma nova solicitação. "
+        "Você DEVE chamar as ferramentas necessárias (generate_image, generate_pptx, etc.) AGORA. "
+        "NUNCA use nomes de arquivos de mensagens anteriores. Cada arquivo DEVE ser novo."
+    )))
+    return await agent_node({**state, "messages": new_messages}, executor_agent, "arth_executor")
 async def qa_node(state): return await agent_node(state, qa_agent, "arth_qa")
 async def analyst_node(state): return await agent_node(state, analyst_agent, "arth_analyst")
 
@@ -183,28 +191,21 @@ async def supervisor_node(state: AgentState):
     logger.info(f"[ROUTER] Para: {routing_result.next_agent}")
 
     if routing_result.next_agent == "FINISH":
-        # CRÍTICO: só considera "resposta preservada" se especialista rodou NESTE turno.
-        # Antes buscava em todo o histórico → pegava executor de turnos anteriores → "Tarefa concluída" falso.
-        last_specialist_msg = next(
-            (m for m in reversed(msgs_this_turn) if m.type == "ai" and m.name in members),
-            None
-        )
+        messages = list(state.get("messages", []))
+        last_human_idx = max((i for i, m in enumerate(messages) if m.type == "human"), default=0)
+        msgs_this_turn = messages[last_human_idx + 1:]
+        
+        last_specialist_msg = next((m for m in reversed(msgs_this_turn) if m.type == "ai" and m.name in members), None)
 
         if last_specialist_msg:
+            # Preserva a resposta rica do especialista (com ou sem arquivo, se ele falou algo útil)
             logger.info(f"[Supervisor] Finalizando. Preservando resposta de {last_specialist_msg.name}")
             return {"next_agent": "FINISH"}
 
-        # Supervisor disse FINISH mas nenhum especialista rodou neste turno.
-        if routing_result.final_answer and routing_result.final_answer.strip():
-            logger.info("[Supervisor] FINISH com resposta direta do orquestrador.")
-            return {
-                "next_agent": "FINISH",
-                "messages": [AIMessage(content=routing_result.final_answer, name="arth_orchestrator")]
-            }
-
-        # Sem especialista e sem resposta → força executor para não travar.
-        logger.warning("[Supervisor] FINISH prematuro detectado — forçando arth_executor.")
-        return {"next_agent": "arth_executor"}
+        return {
+            "next_agent": "FINISH",
+            "messages": [AIMessage(content=routing_result.final_answer or "Tarefa concluída.", name="arth_orchestrator")]
+        }
 
     return {"next_agent": routing_result.next_agent}
 
