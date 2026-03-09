@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     # --- KEYS ---
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
     
     # --- CHANNELS (Evolution API / Telegram) ---
     EVOLUTION_API_URL: str = os.getenv("EVOLUTION_API_URL", "")
