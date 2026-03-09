@@ -2,6 +2,7 @@ import os
 import json
 import uuid
 import logging
+import re
 from langchain_core.tools import tool
 from pptx import Presentation
 from pptx.util import Inches, Pt

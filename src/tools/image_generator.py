@@ -125,6 +125,7 @@ async def generate_image(prompt: str, orientation: Optional[str] = "square") -> 
 
     logger.info(f"[ImageGen] Salvo via {model_used}: {filename} ({len(image_bytes):,} bytes)")
     return (
-        f"Imagem profissional gerada com sucesso via {model_used}. "
-        f"Tag de envio: <SEND_FILE:{filename}>"
+        f"Imagem gerada com sucesso via {model_used}. "
+        f"ID para uso: SEND_FILE:{filename}. "
+        "Se quiser enviar esta imagem diretamente ao usuário, você DEVE incluir a tag <SEND_FILE:" + filename + "> na sua resposta final."
     )

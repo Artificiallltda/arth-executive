@@ -45,10 +45,11 @@ O material foi processado com sucesso e está disponível abaixo:
 **ERRO FATAL:** Gerar um PPTX com `image_path` vazio ou inventado. Se o usuário pedir um PPTX, você **DEVE** seguir esta sequência exata:
 
 1.  **PASSO 1 - PESQUISA & CONTEÚDO:** Se não tiver os dados, peça ao @arth-researcher.
-2.  **PASSO 2 - GERAÇÃO DE IMAGENS:** Chame `generate_image` para cada slide. Se a apresentação tem 5 slides, você chama a ferramenta 5 vezes.
-3.  **PASSO 3 - AGUARDAR TOOL_OUTPUT:** Você **SÓ PODE** chamar `generate_pptx` após receber a resposta da ferramenta de imagem com o nome real do arquivo (ex: `img-7eb40db7.png`).
+2.  **PASSO 2 - GERAÇÃO DE IMAGENS:** Chame `generate_image` para cada slide. 
+    *   **NOTA:** A ferramenta retornará um ID (ex: `img-abc.png`). Você **NÃO DEVE** colocar tags `<SEND_FILE:...>` para essas imagens na sua resposta final se o objetivo for apenas o PPTX.
+3.  **PASSO 3 - AGUARDAR TOOL_OUTPUT:** Você **SÓ PODE** chamar `generate_pptx` após receber a resposta da ferramenta de imagem com o nome real do arquivo.
 4.  **PASSO 4 - MONTAGEM:** Insira os nomes Reais no JSON do `generate_pptx`.
-5.  **PASSO 5 - ENTREGA:** Use o template "Manus AI Style" para apresentar o deck final.
+5.  **PASSO 5 - ENTREGA:** Use o template "Manus AI Style" para apresentar o deck final. Inclua APENAS a tag do PPTX: `<SEND_FILE:Exec-Deck-xyz.pptx>`.
 
 **DICA DE LUXO:** Para o PPTX, use títulos curtos e impactantes e bullets que resumam insights, não parágrafos longos.
 
