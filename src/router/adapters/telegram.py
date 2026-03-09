@@ -19,11 +19,13 @@ async def send_telegram_message(chat_id: str, text: str):
         try:
             resp = await client.post(url, json=payload, timeout=15.0)
             if resp.status_code != 200:
-                logger.warning(f"[Telegram] Falha no envio HTML (Status {resp.status_code}). Tentando texto simples...")
+                logger.warning(f"⚠️ [Telegram] Falha HTML (Status {resp.status_code}): {resp.text[:100]}. Tentando modo texto...")
                 payload.pop("parse_mode", None)
                 await client.post(url, json=payload, timeout=15.0)
+            else:
+                logger.info(f"✅ [Telegram] Mensagem enviada para {chat_id}")
         except Exception as e:
-            logger.error(f"Falha ao enviar mensagem Telegram API: {e}")
+            logger.error(f"❌ Falha ao enviar mensagem Telegram API: {e}")
 
 async def download_telegram_file(file_id: str, dest_filename: str) -> str:
     """Baixa um arquivo dos servidores do Telegram."""
@@ -53,18 +55,23 @@ async def send_telegram_document(chat_id: str, file_path: str):
     if not settings.TELEGRAM_BOT_TOKEN:
         return
     if not os.path.exists(file_path):
-        logger.error(f"Documento n\u00e3o encontrado para envio: {file_path}")
+        logger.error(f"❌ Documento não encontrado para envio: {file_path}")
         return
         
+    logger.info(f"📤 [Telegram] Enviando documento: {os.path.basename(file_path)}...")
     url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendDocument"
     async with httpx.AsyncClient() as client:
         try:
             with open(file_path, "rb") as f:
                 files = {"document": (os.path.basename(file_path), f)}
-                data = {"chat_id": chat_id}
-                await client.post(url, data=data, files=files, timeout=30.0)
+                data = {"chat_id": chat_id, "caption": f"✅ Arquivo gerado: {os.path.basename(file_path)}"}
+                resp = await client.post(url, data=data, files=files, timeout=30.0)
+                if resp.status_code == 200:
+                    logger.info(f"✅ [Telegram] Documento enviado com sucesso!")
+                else:
+                    logger.error(f"❌ [Telegram] Falha ao enviar documento ({resp.status_code}): {resp.text}")
         except Exception as e:
-            logger.error(f"Falha ao enviar documento Telegram API: {e}")
+            logger.error(f"❌ Falha ao enviar documento Telegram API: {e}")
 
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
 
