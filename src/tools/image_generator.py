@@ -118,7 +118,7 @@ async def generate_image(prompt: str, orientation: Optional[str] = "square") -> 
             return f"Erro na geração de imagem. flash-image-preview: {e1} | gemini-2.5-flash: {e2}"
 
     ext = _ext_from_mime(mime)
-    filename = f"img_{uuid.uuid4().hex[:8]}.{ext}"
+    filename = f"img-{uuid.uuid4().hex[:8]}.{ext}"
     filepath = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
     with open(filepath, "wb") as f:
         f.write(image_bytes)

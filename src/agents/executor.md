@@ -46,6 +46,7 @@ O material foi processado com sucesso e está disponível abaixo:
 
 1.  **PASSO 1 - PESQUISA & CONTEÚDO:** Se não tiver os dados, peça ao @arth-researcher.
 2.  **PASSO 2 - GERAÇÃO DE IMAGENS:** Chame `generate_image` para cada slide. 
+    *   **ORIENTAÇÃO:** Use obrigatoriamente `orientation="horizontal"` para que a imagem se ajuste ao slide sem esticar.
     *   **NOTA:** A ferramenta retornará um ID (ex: `img-abc.png`). Você **NÃO DEVE** colocar tags `<SEND_FILE:...>` para essas imagens na sua resposta final se o objetivo for apenas o PPTX.
 3.  **PASSO 3 - AGUARDAR TOOL_OUTPUT:** Você **SÓ PODE** chamar `generate_pptx` após receber a resposta da ferramenta de imagem com o nome real do arquivo.
 4.  **PASSO 4 - MONTAGEM:** Insira os nomes Reais no JSON do `generate_pptx`.

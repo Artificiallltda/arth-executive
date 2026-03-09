@@ -118,14 +118,15 @@ async def agent_node(state, agent, name):
             msg = msg.model_copy(update={"content": msg_content + "\n" + "\n".join(missing)})
 
     # --- BLINDAGEM DE MÍDIAS (08/03/2026) ---
-    # Se houver um PPTX na resposta, removemos tags de imagem individuais (img-*.png/jpg)
+    # Se houver um PPTX na resposta, removemos tags de imagem individuais (img- ou img_)
     # para evitar poluição no chat, já que as imagens já estão dentro dos slides.
     if isinstance(msg.content, str) and ".pptx>" in msg.content:
         msg_content = msg.content
-        msg_content = re.sub(r'\n?<SEND_FILE:img-[^>]+>\n?', '', msg_content)
+        # Regex flexível para img- ou img_ com qualquer extensão comum
+        msg_content = re.sub(r'\n?<SEND_FILE:img[-_][^>]+>\n?', '', msg_content)
         if msg_content != msg.content:
             msg = msg.model_copy(update={"content": msg_content.strip()})
-            logger.info(f"[{name}] Tags de imagem redundantes removidas devido ao PPTX.")
+            logger.info(f"[{name}] Tags de imagem redundantes removidas agressivamente devido ao PPTX.")
 
     # Remove SEND_FILE tags que apontam para arquivos inexistentes (previne alucinação de filenames).
     if isinstance(msg.content, str) and "<SEND_FILE:" in msg.content:
