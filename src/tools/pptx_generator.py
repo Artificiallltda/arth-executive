@@ -75,20 +75,21 @@ def _build_cover(prs, title, subtitle=""):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(slide)
 
-    # Grande retângulo central de destaque
-    _rect(slide, Inches(0), Inches(2.5), _W, Inches(2.5), _CARD)
+    # Grande retângulo central de destaque (levemente mais alto para títulos longos)
+    _rect(slide, Inches(0), Inches(2.2), _W, Inches(3.2), _CARD)
     
     # Barra vertical de acento
-    _rect(slide, Inches(0.8), Inches(2.5), Pt(8), Inches(2.5), _ACCENT)
+    _rect(slide, Inches(0.8), Inches(2.2), Pt(8), Inches(3.2), _ACCENT)
 
-    # Título principal (com kerning simulado por espaços se necessário)
-    _text(slide, Inches(1.2), Inches(2.8), Inches(11.0), Inches(1.2),
-          title.upper(), 54, bold=True, color=_WHITE)
+    # Título principal - Ajuste dinâmico de fonte para títulos longos
+    font_size = 54 if len(title) < 30 else 42
+    _text(slide, Inches(1.2), Inches(2.5), Inches(11.0), Inches(1.8),
+          title.upper(), font_size, bold=True, color=_WHITE)
 
-    # Subtítulo
+    # Subtítulo - Posicionado mais abaixo para não colidir
     if subtitle:
-        _text(slide, Inches(1.2), Inches(3.9), Inches(9.5), Inches(0.6),
-              subtitle, 24, color=_ACCENT)
+        _text(slide, Inches(1.2), Inches(4.3), Inches(10.5), Inches(0.8),
+              subtitle, 22, color=_ACCENT)
 
     # Footer decorativo
     _text(slide, Inches(0.8), _H - Inches(0.6), Inches(8), Inches(0.4),
@@ -137,17 +138,18 @@ def _build_content(prs, title, bullets, img_path=None):
             except Exception as e:
                 logger.error(f"[PPTX] Erro imagem: {e}")
 
-    # Conteúdo (Texto)
+    # Conteúdo (Texto) - Espaçamento de linha melhorado
     txt_l = Inches(7.0) if has_image else Inches(1.0)
     txt_w = Inches(5.8) if has_image else Inches(11.3)
     
-    tb = slide.shapes.add_textbox(txt_l, Inches(1.6), txt_w, Inches(5.0))
+    tb = slide.shapes.add_textbox(txt_l, Inches(1.6), txt_w, Inches(5.3))
     tf = tb.text_frame
     tf.word_wrap = True
 
     for i, bullet in enumerate(bullets):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-        p.space_before = Pt(16)
+        p.space_before = Pt(18) # Mais espaço entre bullets
+        p.space_after = Pt(4)
         p.level = 0
         
         # Marcador customizado (Exec Dot)
@@ -158,7 +160,7 @@ def _build_content(prs, title, bullets, img_path=None):
         
         r2 = p.add_run()
         r2.text = str(bullet)
-        r2.font.size = Pt(20)
+        r2.font.size = Pt(19) # Fonte levemente menor para caber melhor
         r2.font.color.rgb = _TEXT
 
 
