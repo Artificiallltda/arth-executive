@@ -37,7 +37,8 @@ gemini_llm = ChatGoogleGenerativeAI(
     temperature=0
 )
 
-llm_with_fallbacks = openai_llm.with_fallbacks([gemini_llm]) if settings.PRIMARY_MODEL != "gemini" else gemini_llm.with_fallbacks([openai_llm])
+# Gemini como Primário, OpenAI como Fallback
+llm_with_fallbacks = gemini_llm.with_fallbacks([openai_llm])
 
 # --- Carregamento de Personas ---
 def load_persona(agent_filename: str) -> str:
