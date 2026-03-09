@@ -71,7 +71,7 @@ researcher_agent = create_specialist_agent([search_web, read_url, read_document,
 planner_agent = create_specialist_agent([get_current_time, search_memory, save_memory, analyze_data_file], load_persona("planner.md"))
 executor_agent = create_specialist_agent(ALL_TOOLS, load_persona("executor.md")) # Executor tem acesso a tudo
 qa_agent = create_specialist_agent([search_memory, save_memory], load_persona("qa.md"))
-analyst_agent = create_specialist_agent([analyze_data_file, read_document, audit_supabase_security, audit_database_schema, search_memory, save_memory], load_persona("analyst.md"))
+analyst_agent = create_specialist_agent([analyze_data_file, read_excel, create_excel, append_to_excel, read_document, audit_supabase_security, audit_database_schema, search_memory, save_memory], load_persona("analyst.md"))
 
 async def agent_node(state, agent, name):
     messages = list(state.get("messages", []))
@@ -169,7 +169,7 @@ async def executor_node(state):
     new_messages = list(state.get("messages", []))
     new_messages.append(SystemMessage(content=(
         "🚨 INSTRUÇÃO DE SEGURANÇA: O usuário fez uma nova solicitação. "
-        "Você DEVE chamar as ferramentas necessárias (generate_image, generate_pptx, etc.) AGORA. "
+        "Você DEVE chamar as ferramentas necessárias (generate_image, generate_pptx, create_excel, etc.) AGORA. "
         "NUNCA use nomes de arquivos de mensagens anteriores. Cada arquivo DEVE ser novo."
     )))
     return await agent_node({**state, "messages": new_messages}, executor_agent, "arth_executor")
