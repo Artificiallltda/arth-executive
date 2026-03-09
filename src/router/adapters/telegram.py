@@ -16,7 +16,16 @@ async def send_telegram_message(chat_id: str, text: str):
     
     async with httpx.AsyncClient() as client:
         try:
-            await client.post(url, json=payload, timeout=10.0)
+            resp = await client.post(url, json=payload, timeout=15.0)
+            if resp.status_code != 200:
+                logger.warning(f"[Telegram] Falha no envio Markdown (Status {resp.status_code}). Tentando texto simples...")
+                # Fallback: Texto simples (remove parse_mode)
+                payload.pop("parse_mode", None)
+                resp_plain = await client.post(url, json=payload, timeout=15.0)
+                if resp_plain.status_code != 200:
+                    logger.error(f"[Telegram] Falha total no envio: {resp_plain.text}")
+                else:
+                    logger.info(f"[Telegram] Mensagem enviada via fallback (texto simples) para {chat_id}")
         except Exception as e:
             logger.error(f"Falha ao enviar mensagem Telegram API: {e}")
 
