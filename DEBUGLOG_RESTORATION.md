@@ -67,4 +67,15 @@ Implementado método `send_telegram_photo` usando a API oficial do Telegram para
 - **Mensagem de Apresentação (Manus AI Style)**: Fluxo de preservação de tags no handler e orquestrador garantido. O Executor deve sempre introduzir o arquivo com tom de consultoria premium.
 - **Resiliência de Tags**: O `agent_node` no `graph.py` agora suporta variações de hífens/sublinhados e remove imagens redundantes se um PPTX estiver presente.
 
+## 7. Homologação de Ingestão e Inteligência Web (08 de Março de 2026)
+### Funcionalidades Blindadas
+- **Web Search Premium**: Integração Tavily como motor primário. Busca profunda e limpa para IA.
+- **Web Reader (Jina)**: Skill `read_url` para leitura completa de links externos em Markdown.
+- **Document Ingestion**: O sistema agora baixa e lê PDFs/DOCX enviados pelo usuário via Telegram.
+- **Telegram HTML Protocol**: Migração de Markdown para HTML no adaptador para eliminar erros 400 por caracteres especiais.
+- **Deduplicação**: Proteção contra mensagens repetidas durante tarefas longas.
+
+**Nota Final:** O sistema atingiu estabilidade executiva. Qualquer alteração em webhooks ou motores de busca deve ser precedida de backup.
+
+
 **Nota:** Qualquer tentativa de reverter para sublinhados (_) ou remover a lógica de verificação resiliente deve ser bloqueada.
