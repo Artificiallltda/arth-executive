@@ -34,16 +34,26 @@ def read_excel(file_path: str, sheet_name: Optional[str] = 0) -> List[Dict[str, 
         return [{"error": str(e)}]
 
 @tool
-def create_excel(data: List[Dict[str, Any]], file_path: str, sheet_name: str = "Sheet1") -> str:
+def create_excel(data: Any, file_path: str, sheet_name: str = "Sheet1") -> str:
     """
-    Cria uma nova planilha Excel (.xlsx) a partir de uma lista de dados (JSON/Dicionários).
+    Cria uma nova planilha Excel (.xlsx) a partir de dados.
     
     Args:
-        data (List[Dict]): Lista de dicionários representando as linhas da planilha.
-        file_path (str): Nome do arquivo a ser criado (ex: 'relatorio-vendas.xlsx'). Deve terminar em .xlsx.
-        sheet_name (str): Nome da aba na planilha.
+        data (Any): Os dados para a planilha. Pode ser uma lista de dicionários ou uma string JSON contendo a lista.
+        file_path (str): Nome do arquivo (ex: 'relatorio-vendas.xlsx').
+        sheet_name (str): Nome da aba.
     """
     try:
+        import json
+        # Se os dados vierem como string (comum em falhas de tool-calling), converte para lista
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except:
+                # Se falhar o JSON, tenta limpar possíveis caracteres de escape
+                clean_data = data.replace('\\"', '"').replace("\\'", "'")
+                data = json.loads(clean_data)
+
         if not file_path.endswith(".xlsx"):
             file_path += ".xlsx"
             
@@ -56,7 +66,7 @@ def create_excel(data: List[Dict[str, Any]], file_path: str, sheet_name: str = "
         return f"Planilha '{file_path}' criada com sucesso com {len(data)} linhas.\n<SEND_FILE:{file_path}>"
     except Exception as e:
         logger.error(f"Erro ao criar Excel {file_path}: {e}")
-        return f"Erro ao criar planilha: {e}"
+        return f"Erro ao criar planilha: {e}. Certifique-se de que os dados estão no formato correto (Lista de Dicionários)."
 
 @tool
 def append_to_excel(data: List[Dict[str, Any]], file_path: str, sheet_name: str = "Sheet1") -> str:
