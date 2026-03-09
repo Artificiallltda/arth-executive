@@ -16,9 +16,22 @@ class ReadExcelSchema(BaseModel):
     sheet_name: Union[str, int, None] = Field(default=0, description="Opcional. Nome da aba ou índice (0 para a primeira).")
 
 class WriteExcelSchema(BaseModel):
-    data: list = Field(..., description="OBRIGATÓRIO. Uma lista de objetos JSON (dicionários). Cada objeto representa uma linha da planilha. NUNCA deixe vazio.")
+    data: List[Dict[str, Any]] = Field(..., description="OBRIGATÓRIO. Uma lista de objetos JSON (dicionários). Cada objeto representa uma linha da planilha. NUNCA deixe vazio.")
     file_path: str = Field(..., description="OBRIGATÓRIO. O nome do arquivo Excel (ex: 'relatorio.xlsx').")
     sheet_name: str = Field(default="Sheet1", description="Opcional. Nome da aba.")
+    
+    # Validador flexível para aceitar dados mesmo que o modelo os envie como uma grande string JSON
+    class Config:
+        arbitrary_types_allowed = True
+        
+    def __init__(self, **data_input):
+        raw_data = data_input.get("data")
+        if isinstance(raw_data, str):
+            try:
+                data_input["data"] = json.loads(raw_data)
+            except Exception:
+                pass
+        super().__init__(**data_input)
 
 def _clean_data(raw_data: Any) -> List[Dict[str, Any]]:
     """Tenta limpar e consertar o payload de dados enviado pelo modelo Gemini/OpenAI."""
