@@ -164,8 +164,17 @@ async def executor_node(state):
         "NUNCA use nomes de arquivos de mensagens anteriores. Cada arquivo DEVE ser novo."
     )))
     return await agent_node({**state, "messages": new_messages}, executor_agent, "arth_executor")
+
 async def qa_node(state): return await agent_node(state, qa_agent, "arth_qa")
-async def analyst_node(state): return await agent_node(state, analyst_agent, "arth_analyst")
+
+async def analyst_node(state): 
+    new_messages = list(state.get("messages", []))
+    new_messages.append(SystemMessage(content=(
+        "🚨 INSTRUÇÃO DE SEGURANÇA: Se você foi acionado para gerar uma planilha ou analisar dados, "
+        "Você DEVE chamar a ferramenta (ex: create_excel, analyze_data_file) AGORA na sua resposta. "
+        "Não apenas fale sobre os dados, EXECUTE a ferramenta obrigatóriamente."
+    )))
+    return await agent_node({**state, "messages": new_messages}, analyst_agent, "arth_analyst")
 
 # --- Orquestrador (Supervisor) ---
 members = ["arth_researcher", "arth_planner", "arth_executor", "arth_qa", "arth_analyst"]
