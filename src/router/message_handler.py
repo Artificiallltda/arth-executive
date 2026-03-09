@@ -62,9 +62,10 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
         from src.utils.log_buffer import get_logs_text
         return get_logs_text(n=30)
 
-    if text.lower().strip() in _RESET_KEYWORDS:
-        _reset_session(channel, user_id)
-        return "Histórico apagado! Pode começar uma nova conversa do zero."
+    # Detecção de intenção para log de diagnóstico
+    file_keywords = ["excel", "planilha", "xlsx", "csv", "pptx", "pdf", "imagem", "gera", "cria", "faz"]
+    if any(kw in text.lower() for kw in file_keywords):
+        logger.info(f"🚩 [Router] Pedido de arquivo detectado: user_id={user_id} | texto='{text[:50]}...'")
 
     thread_key = _get_thread_id(channel, user_id)
     config = {"configurable": {"thread_id": thread_key, "user_name": user_name}, "recursion_limit": 50}

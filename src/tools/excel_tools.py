@@ -35,7 +35,10 @@ class WriteExcelSchema(BaseModel):
 
 def _clean_data(raw_data: Any) -> List[Dict[str, Any]]:
     """Tenta limpar e consertar o payload de dados enviado pelo modelo Gemini/OpenAI."""
+    logger.info(f"📊 [ExcelTool] Recebido para limpeza: tipo={type(raw_data)}")
+    
     if raw_data is None:
+        logger.error("[ExcelTool] Erro: Dados recebidos como None.")
         raise ValueError("O campo 'data' foi recebido como None/Empty. Você deve prover dados para criar uma planilha.")
         
     if isinstance(raw_data, str):

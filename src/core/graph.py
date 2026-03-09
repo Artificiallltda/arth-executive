@@ -156,6 +156,9 @@ async def agent_node(state, agent, name):
 async def researcher_node(state): return await agent_node(state, researcher_agent, "arth_researcher")
 async def planner_node(state): return await agent_node(state, planner_agent, "arth_planner")
 async def executor_node(state): 
+    user_input = next((m.content for m in reversed(state.get("messages", [])) if m.type == "human"), "N/A")
+    logger.info(f"🔨 [Executor] Recebi pedido para gerar arquivo: '{user_input[:100]}...'")
+    
     # Injeção de instrução de sistema FORÇADA para evitar alucinação de arquivos
     new_messages = list(state.get("messages", []))
     new_messages.append(SystemMessage(content=(
@@ -163,11 +166,15 @@ async def executor_node(state):
         "Você DEVE chamar as ferramentas necessárias (generate_image, generate_pptx, create_excel, etc.) AGORA. "
         "NUNCA use nomes de arquivos de mensagens anteriores. Cada arquivo DEVE ser novo."
     )))
-    return await agent_node({**state, "messages": new_messages}, executor_agent, "arth_executor")
+    result = await agent_node({**state, "messages": new_messages}, executor_agent, "arth_executor")
+    return result
 
 async def qa_node(state): return await agent_node(state, qa_agent, "arth_qa")
 
 async def analyst_node(state): 
+    user_input = next((m.content for m in reversed(state.get("messages", [])) if m.type == "human"), "N/A")
+    logger.info(f"📊 [Analyst] Preparando/Analisando dados para: '{user_input[:100]}...'")
+    
     new_messages = list(state.get("messages", []))
     new_messages.append(SystemMessage(content=(
         "🚨 INSTRUÇÃO DE SEGURANÇA: Se você foi acionado para gerar uma planilha ou analisar dados, "
