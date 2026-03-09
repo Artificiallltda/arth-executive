@@ -12,22 +12,42 @@ async def send_telegram_message(chat_id: str, text: str):
         return
         
     url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+    # Mudança para HTML: mais estável que Markdown para dados da web
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     
     async with httpx.AsyncClient() as client:
         try:
             resp = await client.post(url, json=payload, timeout=15.0)
             if resp.status_code != 200:
-                logger.warning(f"[Telegram] Falha no envio Markdown (Status {resp.status_code}). Tentando texto simples...")
-                # Fallback: Texto simples (remove parse_mode)
+                logger.warning(f"[Telegram] Falha no envio HTML (Status {resp.status_code}). Tentando texto simples...")
                 payload.pop("parse_mode", None)
-                resp_plain = await client.post(url, json=payload, timeout=15.0)
-                if resp_plain.status_code != 200:
-                    logger.error(f"[Telegram] Falha total no envio: {resp_plain.text}")
-                else:
-                    logger.info(f"[Telegram] Mensagem enviada via fallback (texto simples) para {chat_id}")
+                await client.post(url, json=payload, timeout=15.0)
         except Exception as e:
             logger.error(f"Falha ao enviar mensagem Telegram API: {e}")
+
+async def download_telegram_file(file_id: str, dest_filename: str) -> str:
+    """Baixa um arquivo dos servidores do Telegram."""
+    if not settings.TELEGRAM_BOT_TOKEN: return None
+    
+    async with httpx.AsyncClient() as client:
+        # 1. Get File Path
+        get_file_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getFile?file_id={file_id}"
+        resp = await client.get(get_file_url)
+        if resp.status_code != 200: return None
+        
+        file_path = resp.json().get("result", {}).get("file_path")
+        if not file_path: return None
+        
+        # 2. Download
+        download_url = f"https://api.telegram.org/file/bot{settings.TELEGRAM_BOT_TOKEN}/{file_path}"
+        dest_path = os.path.join(settings.DATA_OUTPUTS_PATH, dest_filename)
+        
+        resp_file = await client.get(download_url)
+        if resp_file.status_code == 200:
+            with open(dest_path, "wb") as f:
+                f.write(resp_file.content)
+            return dest_path
+    return None
 
 async def send_telegram_document(chat_id: str, file_path: str):
     if not settings.TELEGRAM_BOT_TOKEN:

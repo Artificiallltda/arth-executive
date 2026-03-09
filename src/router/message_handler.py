@@ -4,7 +4,10 @@ import platform
 import asyncio
 import re
 import hashlib
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+import os
+import uuid
+import base64
+from langchain_core.messages import HumanMessage
 
 from src.config import settings
 from src.core.engine import engine
@@ -12,9 +15,6 @@ from src.router.adapters.whatsapp import process_whatsapp_reply, send_whatsapp_m
 from src.router.adapters.telegram import process_telegram_reply, send_telegram_message
 from src.router.adapters.instagram import process_instagram_reply, send_instagram_message
 from src.utils.audio_transcriber import transcribe_audio_file
-import os
-import uuid
-import base64
 
 if platform.system() == "Windows":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -22,10 +22,10 @@ if platform.system() == "Windows":
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Controle de sessão, deduplicação e locks
+# Controle de sessão e deduplicação
 _session_counters: dict = {}
 _user_locks: dict = {}
-_last_messages: dict = {} # {user_id: msg_hash}
+_last_messages: dict = {} # {user_id: hash}
 _RESET_KEYWORDS = {"resetar", "reset", "/reset", "limpar histórico", "limpar historico", "nova conversa", "começar do zero", "comecar do zero"}
 
 def _get_thread_id(channel: str, user_id: str) -> str:
@@ -51,20 +51,17 @@ def _reset_session(channel: str, user_id: str):
     logger.info(f"[Reset] Nova sessão iniciada para {key}")
 
 async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", status_callback=None, user_name: str = "User", media_data: dict = None):
-    """Motor de raciocínio integral com restauração de funcionalidades."""
+    """Motor de raciocínio integral com suporte a documentos e sanitização HTML."""
     logger.info(f"[{channel.upper()}] Processando mensagem de {user_name} ({user_id})")
     
-    # Deduplicação básica
     if _is_duplicate(str(user_id), text):
         logger.info(f"[Deduplication] Ignorando mensagem repetida de {user_id}")
         return None
 
-    # Comando /logs
     if text.lower().strip() == "/logs":
         from src.utils.log_buffer import get_logs_text
         return get_logs_text(n=30)
 
-    # Reset de sessão
     if text.lower().strip() in _RESET_KEYWORDS:
         _reset_session(channel, user_id)
         return "Histórico apagado! Pode começar uma nova conversa do zero."
@@ -105,26 +102,34 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
                     for m in msgs:
                         if not hasattr(m, "content") or not m.content: continue
                         content_str = str(m.content)
-                        # Coleta tags <SEND_FILE:...>
                         tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):[^>]+>', content_str)
                         collected_tags.extend(tags)
                         if node in SPECIALIST_NODES:
                             last_specialist_text = content_str
 
             final_response = last_specialist_text or "Tarefa concluída."
-            # Remove alucinações de links markdown
             final_response = re.sub(r'!?\[.*?\]\(.*?\)', '', final_response).strip()
 
-            # Anexa tags de arquivos
             unique_tags = list(dict.fromkeys(collected_tags))
             for tag in unique_tags:
                 if tag not in final_response: final_response += f"\n{tag}"
 
-            # Sanitização para Telegram
+            # Sanitização Final para Telegram HTML
             if channel == "telegram":
-                # Escapa caracteres que costumam quebrar o Markdown simples
-                final_response = final_response.replace("_", "\\_").replace("[", "\\[").replace("]", "\\]")
-                final_response = final_response.replace("\\_\\_", "__") # Restaura negritos
+                # Converte negritos para HTML
+                final_response = final_response.replace("**", "<b>")
+                parts = final_response.split("<b>")
+                new_parts = [parts[0]]
+                for i in range(1, len(parts)):
+                    tag = "</b>" if i % 2 != 0 else "<b>"
+                    new_parts.append(tag + parts[i])
+                final_response = "".join(new_parts)
+                if final_response.count("<b>") > final_response.count("</b>"): final_response += "</b>"
+                
+                # Escapa caracteres reservados preservando nossas tags
+                final_response = final_response.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                final_response = final_response.replace("&lt;b&gt;", "<b>").replace("&lt;/b&gt;", "</b>")
+                final_response = final_response.replace("&lt;i&gt;", "<i>").replace("&lt;/i&gt;", "</i>")
 
             return final_response
 
@@ -154,13 +159,36 @@ async def receive_telegram(request: Request, background_tasks: BackgroundTasks):
     body = await request.json()
     if "message" not in body: return {"status": "ignored"}
     msg = body["message"]
-    text = msg.get("text", "")
     chat_id = str(msg.get("chat", {}).get("id", ""))
-    if not text or not chat_id: return {"status": "ignored"}
-    async def status_callback(m: str): await send_telegram_message(chat_id, f"_{m}_")
+    user_name = msg.get("from", {}).get("first_name", "User")
+    
+    text = msg.get("text", "") or msg.get("caption", "")
+    document = msg.get("document")
+    
+    if not chat_id: return {"status": "ignored"}
+
+    async def status_callback(m: str): await send_telegram_message(chat_id, f"<i>{m}</i>")
+
     async def run_pipeline():
-        response = await execute_brain(user_id=chat_id, text=text, channel="telegram", status_callback=status_callback, user_name=msg.get("from", {}).get("first_name", "User"))
+        final_text = text
+        if document:
+            file_id = document.get("file_id")
+            file_name = document.get("file_name", f"doc_{uuid.uuid4().hex[:6]}")
+            safe_name = re.sub(r'[^\w\s.-]', '', file_name).replace(' ', '_')
+            await status_callback(f"Recebi seu arquivo '{safe_name}', estou baixando para analisar... 📥")
+            from src.router.adapters.telegram import download_telegram_file
+            local_path = await download_telegram_file(file_id, safe_name)
+            if local_path:
+                instruction = f"\n\n[SISTEMA: O usuário enviou o arquivo '{safe_name}'. Use read_document para analisá-lo.]"
+                final_text = (final_text + instruction) if final_text else instruction
+            else:
+                await status_callback("Falha ao baixar arquivo.")
+                return
+
+        if not final_text: return
+        response = await execute_brain(user_id=chat_id, text=final_text, channel="telegram", status_callback=status_callback, user_name=user_name)
         if response: await process_telegram_reply(chat_id, response)
+
     background_tasks.add_task(run_pipeline)
     return {"status": "queued"}
 
