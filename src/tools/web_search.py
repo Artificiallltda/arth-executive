@@ -34,17 +34,25 @@ async def search_web(query: str, max_results: int = 8) -> str:
                     await asyncio.sleep(2.0)
 
         if not results:
+            logger.warning(f"[WebSearch] Nenhum resultado encontrado para: {query}")
             return f"Nenhuma informacao recente encontrada para: {query}"
 
         formatted_results = []
         for i, r in enumerate(results):
+            title = r.get('title', 'Sem título').strip()
+            link = r.get('href', r.get('link', 'Sem URL')).strip()
+            body = r.get('body', r.get('snippet', '')).strip()
+            
             formatted_results.append(
-                f"[{i+1}] {r.get('title', '')}\n"
-                f"URL: {r.get('href', '')}\n"
-                f"Resumo: {r.get('body', '')}\n"
+                f"FONTE [{i+1}]: {title}\n"
+                f"URL: {link}\n"
+                f"CONTEÚDO: {body}\n"
+                f"---"
             )
 
-        return "\n".join(formatted_results)
+        final_output = "\n".join(formatted_results)
+        logger.info(f"[WebSearch] Pesquisa concluída. Retornados {len(results)} resultados ({len(final_output)} chars).")
+        return final_output
     except Exception as e:
         logger.error(f"[WebSearch] Falha total: {e}")
         return f"Erro na pesquisa em tempo real: {str(e)}"
