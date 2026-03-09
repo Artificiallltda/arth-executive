@@ -27,6 +27,7 @@ from src.tools.pptx_generator import generate_pptx
 from src.tools.database_tools import audit_supabase_security, audit_database_schema
 from src.tools.audio_generator import generate_audio
 from src.tools.rag_tools import query_knowledge_base, upload_document_to_knowledge_base
+from src.tools.excel_tools import read_excel, create_excel, append_to_excel
 from src.config import settings
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,8 @@ ALL_TOOLS = [
     execute_python_code, save_memory, search_memory, ask_chefia, 
     generate_image, analyze_data_file, schedule_reminder, 
     generate_pptx, audit_supabase_security, audit_database_schema, 
-    generate_audio, query_knowledge_base, upload_document_to_knowledge_base
+    generate_audio, query_knowledge_base, upload_document_to_knowledge_base,
+    read_excel, create_excel, append_to_excel
 ]
 
 # --- Criação dos Agentes Especialistas ---
