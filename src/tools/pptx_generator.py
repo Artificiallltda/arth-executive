@@ -13,12 +13,12 @@ logger = logging.getLogger(__name__)
 
 # ─── Manus Executive Design System ──────────────────────────────────────────
 # Paleta: Dark Navy + Cobalt Blue — limpo, profissional, moderno
-_BG     = RGBColor(13,  17,  23)   # #0D1117 — fundo principal
-_CARD   = RGBColor(22,  27,  34)   # #161B22 — header / cards
-_ACCENT = RGBColor(88, 166, 255)   # #58A6FF — azul cobalto
-_WHITE  = RGBColor(255, 255, 255)  # branco puro
-_TEXT   = RGBColor(230, 237, 243)  # #E6EDF3 — off-white
-_MUTED  = RGBColor(139, 148, 158)  # #8B949E — cinza
+_BG     = RGBColor(10,  12,  16)   # Quase preto profundo
+_CARD   = RGBColor(28,  33,  40)   # Cinza azulado escuro para elementos
+_ACCENT = RGBColor(88, 166, 255)   # Azul cobalto brilhante (Electric Blue)
+_WHITE  = RGBColor(255, 255, 255)  # Branco puro
+_TEXT   = RGBColor(230, 237, 243)  # Off-white para leitura
+_MUTED  = RGBColor(110, 118, 129)  # Cinza médio para detalhes
 
 _W = Inches(13.333)
 _H = Inches(7.5)
@@ -30,13 +30,27 @@ def _bg(slide, color=_BG):
     fill.fore_color.rgb = color
 
 
-def _rect(slide, l, t, w, h, color):
-    """Adiciona retângulo colorido (MSO_AUTO_SHAPE_TYPE.RECTANGLE = 1)."""
+def _rect(slide, l, t, w, h, color, alpha=1.0):
+    """Adiciona retângulo colorido."""
     s = slide.shapes.add_shape(1, l, t, w, h)
     s.fill.solid()
     s.fill.fore_color.rgb = color
-    s.line.color.rgb = color  # linha mesma cor do fill = invisível
+    s.line.fill.background() # sem borda
     return s
+
+
+def _add_decorative_elements(slide):
+    """Adiciona formas geométricas sutis para visual premium."""
+    # Triângulo decorativo no canto inferior direito
+    shape = slide.shapes.add_shape(5, _W - Inches(3), _H - Inches(2), Inches(3), Inches(2))
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = _CARD
+    shape.line.fill.background()
+    
+    # Linha fina de acento
+    line = slide.shapes.add_shape(1, Inches(0.5), _H - Inches(0.8), _W - Inches(1), Pt(1))
+    line.fill.solid()
+    line.fill.fore_color.rgb = _ACCENT
 
 
 def _text(slide, l, t, w, h, txt, size, bold=False, color=_TEXT,
@@ -60,54 +74,41 @@ def _build_cover(prs, title, subtitle=""):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(slide)
 
-    # Barra de acento no topo
-    _rect(slide, Inches(0), Inches(0), _W, Pt(5), _ACCENT)
+    # Grande retângulo central de destaque
+    _rect(slide, Inches(0), Inches(2.5), _W, Inches(2.5), _CARD)
+    
+    # Barra vertical de acento
+    _rect(slide, Inches(0.8), Inches(2.5), Pt(8), Inches(2.5), _ACCENT)
 
-    # Barra vertical decorativa à esquerda
-    _rect(slide, Inches(0.75), Inches(1.5), Pt(4), Inches(3.4), _ACCENT)
+    # Título principal (com kerning simulado por espaços se necessário)
+    _text(slide, Inches(1.2), Inches(2.8), Inches(11.0), Inches(1.2),
+          title.upper(), 54, bold=True, color=_WHITE)
 
-    # Título principal
-    _text(slide, Inches(1.15), Inches(1.7), Inches(11.0), Inches(2.6),
-          title.upper(), 48, bold=True, color=_WHITE)
-
-    # Subtítulo (se informado)
+    # Subtítulo
     if subtitle:
-        _text(slide, Inches(1.15), Inches(4.5), Inches(9.5), Inches(0.8),
-              subtitle, 22, color=_ACCENT, italic=True)
+        _text(slide, Inches(1.2), Inches(3.9), Inches(9.5), Inches(0.6),
+              subtitle, 24, color=_ACCENT)
 
-    # Barra de acento na base
-    _rect(slide, Inches(0), _H - Pt(5), _W, Pt(5), _ACCENT)
-
-    # Label rodapé
-    _text(slide, Inches(0.5), _H - Inches(0.55), Inches(8), Inches(0.4),
-          "EXECUTIVE BRIEFING  ·  CONFIDENTIAL", 9, color=_MUTED)
+    # Footer decorativo
+    _text(slide, Inches(0.8), _H - Inches(0.6), Inches(8), Inches(0.4),
+          "EXECUTIVE STRATEGY DECK  ·  MANUS AI PRO", 10, color=_MUTED)
 
 
 def _build_content(prs, title, bullets, img_path=None):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(slide)
+    _add_decorative_elements(slide)
 
-    # Barra de header
-    _rect(slide, Inches(0), Inches(0), _W, Inches(0.95), _CARD)
-    # Borda esquerda colorida no header
-    _rect(slide, Inches(0), Inches(0), Pt(5), Inches(0.95), _ACCENT)
+    # Header moderno
+    _rect(slide, Inches(0), Inches(0), _W, Inches(1.1), _CARD)
+    _rect(slide, Inches(0.5), Inches(0.35), Pt(4), Inches(0.4), _ACCENT)
+    
+    _text(slide, Inches(0.75), Inches(0.30), Inches(12), Inches(0.6),
+          title.upper(), 28, bold=True, color=_WHITE)
 
-    # Título no header
-    _text(slide, Inches(0.28), Inches(0.10), Inches(12.5), Inches(0.72),
-          title.upper(), 26, bold=True, color=_WHITE)
-
-    # Barra de acento na base
-    _rect(slide, Inches(0), _H - Pt(4), _W, Pt(4), _ACCENT)
-
-    # Número da página
-    slide_num = len(prs.slides)
-    _text(slide, _W - Inches(0.8), _H - Inches(0.45), Inches(0.7), Inches(0.35),
-          str(slide_num), 10, color=_MUTED, align=PP_ALIGN.RIGHT)
-
-    # Imagem (se informada)
+    # Imagem
     has_image = False
     if img_path:
-        # Extrai apenas o nome do arquivo se vier dentro de uma tag <SEND_FILE:...>
         clean_name = str(img_path)
         tag_match = re.search(r'<SEND_FILE:([^>]+)>', clean_name)
         if tag_match:
@@ -115,60 +116,49 @@ def _build_content(prs, title, bullets, img_path=None):
         else:
             clean_name = clean_name.replace("SEND_FILE:", "").replace("<", "").replace(">", "").strip()
 
-        # Tenta o nome direto e variantes de hífen/sublinhado
-        variants = [
-            clean_name,
-            clean_name.replace("-", "_"),
-            clean_name.replace("_", "-")
-        ]
-
+        variants = [clean_name, clean_name.replace("-", "_"), clean_name.replace("_", "-")]
         found_path = None
         for v in variants:
-            full_path = os.path.join(settings.DATA_OUTPUTS_PATH, v)
-            if os.path.exists(full_path):
-                found_path = full_path
-                logger.info(f"[PPTX] Imagem encontrada: {v}")
+            fp = os.path.join(settings.DATA_OUTPUTS_PATH, v)
+            if os.path.exists(fp):
+                found_path = fp
                 break
 
         if found_path:
             try:
+                # Moldura da imagem (Premium Look)
+                _rect(slide, Inches(0.45), Inches(1.45), Inches(6.1), Inches(5.1), _ACCENT)
                 slide.shapes.add_picture(
-                    found_path, Inches(0.4), Inches(1.1),
-                    width=Inches(5.9), height=Inches(5.7)
+                    found_path, Inches(0.5), Inches(1.5),
+                    width=Inches(6.0), height=Inches(5.0)
                 )
                 has_image = True
             except Exception as e:
-                logger.error(f"[PPTX] Erro ao inserir imagem {found_path}: {e}")
-        else:
-            logger.warning(f"[PPTX] Nenhuma variante de imagem encontrada para: {clean_name}")
+                logger.error(f"[PPTX] Erro imagem: {e}")
 
-    # Área de texto
-    txt_l = Inches(6.6) if has_image else Inches(0.65)
-    txt_w = Inches(6.3) if has_image else Inches(12.15)
-
-    tb = slide.shapes.add_textbox(txt_l, Inches(1.2), txt_w, Inches(5.85))
+    # Conteúdo (Texto)
+    txt_l = Inches(7.0) if has_image else Inches(1.0)
+    txt_w = Inches(5.8) if has_image else Inches(11.3)
+    
+    tb = slide.shapes.add_textbox(txt_l, Inches(1.6), txt_w, Inches(5.0))
     tf = tb.text_frame
     tf.word_wrap = True
 
     for i, bullet in enumerate(bullets):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-        p.space_before = Pt(14)
-        p.space_after = Pt(4)
-
-        # Marcador colorido
-        r_dot = p.add_run()
-        r_dot.text = "●  "
-        r_dot.font.name = "Calibri"
-        r_dot.font.size = Pt(11)
-        r_dot.font.bold = True
-        r_dot.font.color.rgb = _ACCENT
-
-        # Texto do bullet
-        r_txt = p.add_run()
-        r_txt.text = str(bullet)
-        r_txt.font.name = "Calibri"
-        r_txt.font.size = Pt(18)
-        r_txt.font.color.rgb = _TEXT
+        p.space_before = Pt(16)
+        p.level = 0
+        
+        # Marcador customizado (Exec Dot)
+        r = p.add_run()
+        r.text = "◈  "
+        r.font.color.rgb = _ACCENT
+        r.font.bold = True
+        
+        r2 = p.add_run()
+        r2.text = str(bullet)
+        r2.font.size = Pt(20)
+        r2.font.color.rgb = _TEXT
 
 
 @tool
