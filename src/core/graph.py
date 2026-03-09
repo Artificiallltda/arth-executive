@@ -226,22 +226,35 @@ async def supervisor_node(state: AgentState):
     routing_result = await supervisor_chain.ainvoke(state)
     logger.info(f"[ROUTER] Para: {routing_result.next_agent}")
 
-    if routing_result.next_agent == "FINISH":
+    # BLOQUEIO DE FINISH SEM ARQUIVO
+    if routing_result.next_agent == "FINISH" or routing_result.next_agent is None:
         if needs_file and not already_has_file:
-            logger.warning("[Supervisor] LLM tentou dar FINISH sem arquivo.")
-            # Se for pedido de planilha, e o analista ainda não rodou, força ele
+            logger.warning(f"[Supervisor] Bloqueio de FINISH precoce. Usuário pediu arquivo e não foi entregue.")
+            
+            # Se for pedido de planilha
             excel_keywords = ["excel", "planilha", "xlsx", "csv"]
             if any(kw in user_input for kw in excel_keywords):
-                if "arth_analyst" not in specialist_runs:
-                    logger.warning("[Supervisor] Forçando Analista para gerar Planilha antes do FINISH.")
+                # Se o Analista ainda não foi 2 vezes, insiste nele
+                if specialist_runs.get("arth_analyst", 0) < 2:
+                    logger.warning("[Supervisor] Forçando Analista (Retry) para gerar Planilha.")
                     return {"next_agent": "arth_analyst"}
-                    
-            # Fallback para executor para outros arquivos
-            if "arth_executor" not in specialist_runs:
-                logger.warning("[Supervisor] Forçando Executor para gerar arquivo antes do FINISH.")
+                # Se o Analista falhou 2 vezes, tenta o Executor
+                if specialist_runs.get("arth_executor", 0) < 1:
+                    logger.warning("[Supervisor] Analista falhou. Tentando Executor como contingência para Excel.")
+                    return {"next_agent": "arth_executor"}
+            
+            # Se for outro arquivo e o executor ainda não foi 2 vezes
+            if specialist_runs.get("arth_executor", 0) < 2:
+                logger.warning("[Supervisor] Forçando Executor (Retry) para gerar arquivo.")
                 return {"next_agent": "arth_executor"}
-                
-        messages = list(state.get("messages", []))
+
+            logger.error("[Supervisor] Falha crítica: Analista e Executor falharam após retries. Finalizando com erro.")
+            return {
+                "next_agent": "FINISH",
+                "messages": [AIMessage(content="Peço desculpas, mas encontrei uma falha técnica persistente ao tentar gerar seu arquivo. Por favor, tente novamente em alguns instantes.", name="arth_orchestrator")]
+            }
+
+    if routing_result.next_agent == "FINISH":
         last_human_idx = max((i for i, m in enumerate(messages) if m.type == "human"), default=0)
         msgs_this_turn = messages[last_human_idx + 1:]
         

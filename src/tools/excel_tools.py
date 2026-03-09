@@ -94,6 +94,7 @@ def create_excel(data: list, file_path: str, sheet_name: str = "Sheet1") -> str:
     O campo 'data' deve ser OBRIGATORIAMENTE uma lista (array).
     """
     try:
+        logger.info(f"🚀 [ExcelGen] Iniciando criação de {file_path}...")
         clean_data = _clean_data(data)
         
         if not file_path.endswith(".xlsx"):
@@ -102,13 +103,34 @@ def create_excel(data: list, file_path: str, sheet_name: str = "Sheet1") -> str:
         full_path = os.path.join(settings.DATA_OUTPUTS_PATH, file_path)
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
         
-        df = pd.DataFrame(clean_data)
-        df.to_excel(full_path, index=False, sheet_name=sheet_name)
-        
-        logger.info(f"Excel criado com sucesso: {full_path}")
-        return f"Planilha '{file_path}' criada com sucesso com {len(clean_data)} linhas.\n<SEND_FILE:{os.path.basename(full_path)}>"
+        # --- TENTATIVA 1: PANDAS ---
+        try:
+            logger.info("[ExcelGen] Tentando via PANDAS...")
+            df = pd.DataFrame(clean_data)
+            df.to_excel(full_path, index=False, sheet_name=sheet_name)
+            logger.info(f"✅ [ExcelGen] Sucesso via PANDAS: {full_path}")
+            return f"Planilha '{file_path}' criada com sucesso com {len(clean_data)} linhas.\n<SEND_FILE:{os.path.basename(full_path)}>"
+        except Exception as pe:
+            logger.warning(f"⚠️ [ExcelGen] Pandas falhou: {pe}. Tentando FALLBACK OpenPyXL...")
+            
+            # --- TENTATIVA 2: OPENPYXL NATIVO ---
+            from openpyxl import Workbook
+            wb = Workbook()
+            ws = wb.active
+            ws.title = sheet_name
+            
+            if clean_data:
+                headers = list(clean_data[0].keys())
+                ws.append(headers)
+                for row in clean_data:
+                    ws.append([row.get(h, "") for h in headers])
+            
+            wb.save(full_path)
+            logger.info(f"✅ [ExcelGen] Sucesso via FALLBACK OpenPyXL: {full_path}")
+            return f"Planilha '{file_path}' criada via fallback seguro com {len(clean_data)} linhas.\n<SEND_FILE:{os.path.basename(full_path)}>"
+            
     except Exception as e:
-        logger.error(f"Erro de validação ou escrita ao criar Excel {file_path}: {e}")
+        logger.error(f"❌ [ExcelGen] Erro crítico ao criar Excel {file_path}: {e}")
         return f"Erro ao criar planilha: {str(e)}"
 
 @tool(args_schema=WriteExcelSchema)
