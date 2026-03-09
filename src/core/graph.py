@@ -217,14 +217,24 @@ async def supervisor_node(state: AgentState):
 
     # --- ROTEAMENTO FORÇADO POR PALAVRAS-CHAVE (Blindagem Total) ---
     user_input = next((m.content for m in reversed(messages) if m.type == "human"), "").lower()
-    last_specialist_msg = next((m.content for m in reversed(msgs_this_turn) if m.type == "ai" and m.name in members), "")
+    
+    # Verifica se qualquer mensagem deste turno já contém uma tag de arquivo
+    already_has_file = any("<SEND_FILE:" in str(m.content) for m in msgs_this_turn)
     
     file_keywords = ["excel", "planilha", "xlsx", "csv", "pptx", "powerpoint", "slides", "docx", "word", "pdf", "imagem", "gera", "cria", "faz"]
     needs_file = any(kw in user_input for kw in file_keywords)
-    already_has_file = "<SEND_FILE:" in str(last_specialist_msg)
     
-    # Se o usuário pediu um arquivo e o último especialista não entregou, força o executor
+    # Se o usuário pediu um arquivo e ninguém entregou ainda:
     if needs_file and not already_has_file:
+        # Se for especificamente Excel/Planilha, tentamos o Analista primeiro ou como backup
+        excel_keywords = ["excel", "planilha", "xlsx", "csv"]
+        is_excel_request = any(kw in user_input for kw in excel_keywords)
+        
+        if is_excel_request:
+            if "arth_analyst" not in specialist_runs:
+                logger.info(f"[Supervisor] Forçando roteamento para arth_analyst (Pedido de Excel detectado: '{user_input[:50]}...')")
+                return {"next_agent": "arth_analyst"}
+        
         if "arth_executor" not in specialist_runs:
             logger.info(f"[Supervisor] Forçando roteamento para arth_executor (Pedido de arquivo detectado: '{user_input[:50]}...')")
             return {"next_agent": "arth_executor"}
@@ -233,6 +243,11 @@ async def supervisor_node(state: AgentState):
     logger.info(f"[ROUTER] Para: {routing_result.next_agent}")
 
     if routing_result.next_agent == "FINISH":
+        if needs_file and not already_has_file:
+            # Se o LLM quis finalizar mas falta o arquivo, tentamos o executor uma última vez
+            if "arth_executor" not in specialist_runs:
+                logger.warning("[Supervisor] LLM tentou dar FINISH sem arquivo. Forçando Executor.")
+                return {"next_agent": "arth_executor"}
         messages = list(state.get("messages", []))
         last_human_idx = max((i for i, m in enumerate(messages) if m.type == "human"), default=0)
         msgs_this_turn = messages[last_human_idx + 1:]
