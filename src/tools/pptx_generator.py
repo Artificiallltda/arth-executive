@@ -1,3 +1,6 @@
+# 🛡️ SKILL BLINDADA (08/03/2026) - NÃO ALTERAR LÓGICA DE DESIGN OU IMAGENS
+# Esta skill foi homologada com design Premium Manus AI e resiliência de tags.
+# Qualquer modificação em layouts, cores ou busca de imagens deve ser evitada.
 import os
 import json
 import uuid

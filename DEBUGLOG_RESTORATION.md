@@ -63,7 +63,8 @@ Implementado método `send_telegram_photo` usando a API oficial do Telegram para
 ### Funcionalidades Blindadas
 - **Geração de Imagens**: Estabilizada com `gemini-3.1-flash-image-preview`. Estética executiva 8k. **NÃO ALTERAR**.
 - **Documentos (DOCX/PDF)**: Padronização de nomes com hífens (`hex-nome.ext`) e conversão Markdown-to-RichText. **NOMEAÇÃO BLINDADA**.
+- **Apresentações (PPTX)**: Design Premium Manus AI (Dark Navy/Electric Blue). Imagens embutidas automaticamente com orientação horizontal. **NÃO ALTERAR DESIGN**.
 - **Mensagem de Apresentação (Manus AI Style)**: Fluxo de preservação de tags no handler e orquestrador garantido. O Executor deve sempre introduzir o arquivo com tom de consultoria premium.
-- **Resiliência de Tags**: O `agent_node` no `graph.py` agora suporta variações de hífens/sublinhados para evitar a remoção acidental de anexos.
+- **Resiliência de Tags**: O `agent_node` no `graph.py` agora suporta variações de hífens/sublinhados e remove imagens redundantes se um PPTX estiver presente.
 
 **Nota:** Qualquer tentativa de reverter para sublinhados (_) ou remover a lógica de verificação resiliente deve ser bloqueada.
