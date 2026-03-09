@@ -2,10 +2,12 @@ import pandas as pd
 import os
 import logging
 from typing import List, Dict, Any, Optional
+from langchain_core.tools import tool
 from src.config import settings
 
 logger = logging.getLogger(__name__)
 
+@tool
 def read_excel(file_path: str, sheet_name: Optional[str] = 0) -> List[Dict[str, Any]]:
     """
     Lê uma planilha Excel e retorna os dados como uma lista de dicionários.
@@ -13,9 +15,6 @@ def read_excel(file_path: str, sheet_name: Optional[str] = 0) -> List[Dict[str, 
     Args:
         file_path (str): Nome do arquivo (ou caminho completo) dentro de DATA_OUTPUTS_PATH.
         sheet_name (str/int): Nome ou índice da aba a ser lida.
-        
-    Returns:
-        List[Dict[str, Any]]: Lista de linhas, onde cada linha é um dicionário {coluna: valor}.
     """
     try:
         # Se não for caminho absoluto, assume que está na pasta de outputs
@@ -34,17 +33,15 @@ def read_excel(file_path: str, sheet_name: Optional[str] = 0) -> List[Dict[str, 
         logger.error(f"Erro ao ler Excel {file_path}: {e}")
         return [{"error": str(e)}]
 
+@tool
 def create_excel(data: List[Dict[str, Any]], file_path: str, sheet_name: str = "Sheet1") -> str:
     """
-    Cria uma nova planilha Excel a partir de uma lista de dados.
+    Cria uma nova planilha Excel (.xlsx) a partir de uma lista de dados (JSON/Dicionários).
     
     Args:
-        data (List[Dict]): Lista de dicionários representando as linhas.
-        file_path (str): Nome do arquivo a ser criado (ex: 'relatorio.xlsx').
-        sheet_name (str): Nome da aba.
-        
-    Returns:
-        str: Mensagem de sucesso com a tag <SEND_FILE:nome_do_arquivo> ou erro.
+        data (List[Dict]): Lista de dicionários representando as linhas da planilha.
+        file_path (str): Nome do arquivo a ser criado (ex: 'relatorio-vendas.xlsx'). Deve terminar em .xlsx.
+        sheet_name (str): Nome da aba na planilha.
     """
     try:
         if not file_path.endswith(".xlsx"):
@@ -61,9 +58,15 @@ def create_excel(data: List[Dict[str, Any]], file_path: str, sheet_name: str = "
         logger.error(f"Erro ao criar Excel {file_path}: {e}")
         return f"Erro ao criar planilha: {e}"
 
+@tool
 def append_to_excel(data: List[Dict[str, Any]], file_path: str, sheet_name: str = "Sheet1") -> str:
     """
     Adiciona novas linhas a uma planilha Excel existente.
+    
+    Args:
+        data (List[Dict]): Lista de novas linhas a adicionar.
+        file_path (str): Nome do arquivo existente.
+        sheet_name (str): Nome da aba.
     """
     try:
         if not os.path.isabs(file_path):
@@ -72,7 +75,7 @@ def append_to_excel(data: List[Dict[str, Any]], file_path: str, sheet_name: str 
             full_path = file_path
             
         if not os.path.exists(full_path):
-            return create_excel(data, file_path, sheet_name)
+            return create_excel.invoke({"data": data, "file_path": file_path, "sheet_name": sheet_name})
             
         # Carrega existente
         existing_df = pd.read_excel(full_path, sheet_name=sheet_name)
