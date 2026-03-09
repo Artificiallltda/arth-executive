@@ -33,32 +33,26 @@ def read_excel(file_path: str, sheet_name: Optional[str] = 0) -> List[Dict[str, 
         logger.error(f"Erro ao ler Excel {file_path}: {e}")
         return [{"error": str(e)}]
 
-@tool
-def create_excel(data: Any, file_path: str, sheet_name: str = "Sheet1") -> str:
+from pydantic import BaseModel, Field
+
+class CreateExcelInput(BaseModel):
+    data: List[Dict[str, Any]] = Field(description="Lista de dicionários representando as linhas e colunas da planilha.")
+    file_path: str = Field(description="Nome do arquivo (ex: 'relatorio.xlsx').")
+    sheet_name: str = Field(default="Sheet1", description="Nome da aba.")
+
+@tool(args_schema=CreateExcelInput)
+def create_excel(data: List[Dict[str, Any]], file_path: str, sheet_name: str = "Sheet1") -> str:
     """
-    Cria uma nova planilha Excel (.xlsx) a partir de dados.
-    
-    Args:
-        data (Any): Os dados para a planilha. Pode ser uma lista de dicionários ou uma string JSON contendo a lista.
-        file_path (str): Nome do arquivo (ex: 'relatorio-vendas.xlsx').
-        sheet_name (str): Nome da aba.
+    Cria uma nova planilha Excel (.xlsx) a partir de uma lista de dados.
+    Esta ferramenta deve ser usada para consolidar relatórios, tabelas de tendências ou qualquer dado estruturado solicitado pelo usuário.
     """
     try:
-        import json
-        # Se os dados vierem como string (comum em falhas de tool-calling), converte para lista
-        if isinstance(data, str):
-            try:
-                data = json.loads(data)
-            except:
-                # Se falhar o JSON, tenta limpar possíveis caracteres de escape
-                clean_data = data.replace('\\"', '"').replace("\\'", "'")
-                data = json.loads(clean_data)
-
         if not file_path.endswith(".xlsx"):
             file_path += ".xlsx"
             
         full_path = os.path.join(settings.DATA_OUTPUTS_PATH, file_path)
         
+        # Converte para DataFrame e salva
         df = pd.DataFrame(data)
         df.to_excel(full_path, index=False, sheet_name=sheet_name)
         
@@ -66,7 +60,7 @@ def create_excel(data: Any, file_path: str, sheet_name: str = "Sheet1") -> str:
         return f"Planilha '{file_path}' criada com sucesso com {len(data)} linhas.\n<SEND_FILE:{file_path}>"
     except Exception as e:
         logger.error(f"Erro ao criar Excel {file_path}: {e}")
-        return f"Erro ao criar planilha: {e}. Certifique-se de que os dados estão no formato correto (Lista de Dicionários)."
+        return f"Erro ao criar planilha: {str(e)}"
 
 @tool
 def append_to_excel(data: List[Dict[str, Any]], file_path: str, sheet_name: str = "Sheet1") -> str:
