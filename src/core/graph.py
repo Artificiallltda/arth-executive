@@ -15,6 +15,7 @@ from src.core.state import AgentState
 from src.tools.basic_tools import get_current_time
 from src.tools.web_search import search_web
 from src.tools.web_reader import read_url
+from src.tools.document_reader import read_document
 from src.tools.doc_generator import generate_docx, generate_pdf
 from src.tools.code_executor import execute_python_code
 from src.tools.memory_tools import save_memory, search_memory
@@ -52,7 +53,7 @@ def load_persona(agent_filename: str) -> str:
 
 # --- Ferramentas ---
 ALL_TOOLS = [
-    get_current_time, search_web, read_url, generate_docx, generate_pdf, 
+    get_current_time, search_web, read_url, read_document, generate_docx, generate_pdf, 
     execute_python_code, save_memory, search_memory, ask_chefia, 
     generate_image, analyze_data_file, schedule_reminder, 
     generate_pptx, audit_supabase_security, audit_database_schema, 
@@ -64,11 +65,11 @@ ALL_TOOLS = [
 def create_specialist_agent(tools, system_prompt: str):
     return create_react_agent(model=llm_with_fallbacks, tools=tools, prompt=system_prompt)
 
-researcher_agent = create_specialist_agent([search_web, read_url, search_memory, save_memory, query_knowledge_base], load_persona("researcher.md"))
+researcher_agent = create_specialist_agent([search_web, read_url, read_document, search_memory, save_memory, query_knowledge_base], load_persona("researcher.md"))
 planner_agent = create_specialist_agent([get_current_time, search_memory, save_memory, analyze_data_file], load_persona("planner.md"))
 executor_agent = create_specialist_agent(ALL_TOOLS, load_persona("executor.md")) # Executor tem acesso a tudo
 qa_agent = create_specialist_agent([search_memory, save_memory], load_persona("qa.md"))
-analyst_agent = create_specialist_agent([analyze_data_file, audit_supabase_security, audit_database_schema, search_memory, save_memory], load_persona("analyst.md"))
+analyst_agent = create_specialist_agent([analyze_data_file, read_document, audit_supabase_security, audit_database_schema, search_memory, save_memory], load_persona("analyst.md"))
 
 async def agent_node(state, agent, name):
     messages = list(state.get("messages", []))

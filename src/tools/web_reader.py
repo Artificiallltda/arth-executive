@@ -13,24 +13,18 @@ async def read_url(url: str) -> str:
     try:
         logger.info(f"[WebReader] Lendo URL: {url}")
         
-        # Usando o r.jina.ai que é um proxy que limpa o HTML e entrega Markdown puro
+        # Chamada simplificada para evitar bloqueios de header
         jina_url = f"https://r.jina.ai/{url}"
         
-        headers = {
-            "Accept": "text/event-stream",
-            "X-With-Generated-Alt": "true" # Tenta gerar alt text para imagens no site
-        }
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(jina_url, headers=headers, timeout=30.0)
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            resp = await client.get(jina_url, timeout=30.0)
             if resp.status_code == 200:
                 content = resp.text
                 logger.info(f"[WebReader] Conteúdo extraído: {len(content)} caracteres.")
-                # Retorna apenas os primeiros 10k caracteres para não estourar contexto
-                return content[:10000]
+                return content[:12000] # Aumentado para 12k chars
             else:
                 logger.warning(f"[WebReader] Falha ao ler link (Status {resp.status_code})")
-                return f"Não foi possível extrair o conteúdo do link. Erro: {resp.status_code}"
+                return f"Não foi possível extrair o conteúdo do link (Erro {resp.status_code}). Tente buscar o assunto via search_web."
 
     except Exception as e:
         logger.error(f"[WebReader] Erro total: {e}")
