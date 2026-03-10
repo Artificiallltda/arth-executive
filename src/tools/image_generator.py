@@ -14,14 +14,26 @@ _TIMEOUT_S = 50   # timeout asyncio em segundos
 _TIMEOUT_MS = 50_000  # mesmo timeout para http_options (SDK usa milissegundos)
 
 
-def _build_prompt(prompt: str) -> str:
+def _build_prompt(prompt: str, orientation: Optional[str]) -> str:
     phrases = re.findall(r'"([^"]*)"', prompt)
     text_ctx = f" Include this text prominently: '{', '.join(phrases)}'." if phrases else ""
+    
+    aspect_mapping = {
+        "vertical": " Aspect Ratio: 9:16 (Vertical format).",
+        "horizontal": " Aspect Ratio: 16:9 (Horizontal format).",
+        "square": " Aspect Ratio: 1:1 (Square format)."
+    }
+    
+    safe_orientation = (orientation or "square").lower()
+    aspect_instruction = aspect_mapping.get(safe_orientation, "")
+    
     return (
-        f"{prompt}.{text_ctx} "
+        f"{prompt}.{text_ctx}{aspect_instruction} "
         "High-end professional photography, cinematic lighting, ultra-detailed, 8k, "
         "executive and modern aesthetic, sharp focus."
     )
+
+
 
 
 def _extract_image_bytes(response) -> tuple[bytes, str]:
@@ -80,18 +92,26 @@ def _run_gemini_25_flash(enhanced_prompt: str) -> tuple[bytes, str]:
     return _extract_image_bytes(response)
 
 
+# ==============================================================================
+# 🛡️ BLINDAGEM DE IMAGEM (DO NOT MODIFY) 🛡️
+# Atenção Desenvolvedor/AI:
+# ESTE FLUXO DE GERAÇÃO ESTÁ ESTÁVEL E HOMOLOGADO.
+# NÃO ALTERE MODELOS DE IMAGEM, TIMEOUTS, RETORNOS DE TAGS OU PARÂMETROS DE ESTADO.
+# NÃO MODIFIQUE A FORMA COMO O CÓDIGO INJETA O ASPECT RATIO ABAIXO.
+# ==============================================================================
+
 @tool
 async def generate_image(prompt: str, orientation: Optional[str] = "square") -> str:
     """
-    Gera imagem profissional via Gemini (Google).
+    Gera imagem profissional via AI.
     Primary: gemini-3.1-flash-image-preview.
-    Fallback: gemini-2.5-flash.
-    orientation: 'square' (1:1), 'vertical' (9:16), 'horizontal' (16:9)
+    Fallback 1: gemini-2.5-flash.
+    Fallback 2: dall-e-3 (OpenAI)
     """
     if not settings.GEMINI_API_KEY:
         return "Erro: GEMINI_API_KEY não configurada no ambiente."
 
-    enhanced_prompt = _build_prompt(prompt)
+    enhanced_prompt = _build_prompt(prompt, orientation)
 
     # --- Tentativa 1: gemini-3.1-flash-image-preview ---
     try:
