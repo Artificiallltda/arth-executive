@@ -198,9 +198,7 @@ async def generate_pdf(title: str, content: str) -> str:
         pdf.ln(12)
 
         def _clean(text: str) -> str:
-            """Remove marcadores markdown e caracteres fora do Latin-1."""
-            text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
-            text = re.sub(r'\*([^*]+)\*', r'\1', text)
+            """Remove caracteres fora do Latin-1 (preserva asteriscos de markdown para formatação fpdf2)."""
             return text.encode("latin-1", errors="replace").decode("latin-1")
 
         # Usa a largura efetiva da página em vez de 0 para evitar o bug de espaço horizontal do fpdf2
@@ -218,7 +216,9 @@ async def generate_pdf(title: str, content: str) -> str:
                 pdf.ln(4)
                 pdf.set_font("Helvetica", "B", 17)
                 pdf.set_text_color(28, 78, 158)
-                pdf.multi_cell(effective_width, 11, _clean(stripped[2:]))
+                # Removendo asteriscos de titulos pois h1 já é Bold forte no código
+                clean_title = _clean(stripped[2:]).replace("**", "")
+                pdf.multi_cell(effective_width, 11, clean_title, markdown=True)
                 # Underline do H1
                 y2 = pdf.get_y() + 1
                 pdf.set_draw_color(28, 78, 158)
@@ -230,31 +230,33 @@ async def generate_pdf(title: str, content: str) -> str:
                 pdf.ln(3)
                 pdf.set_font("Helvetica", "B", 14)
                 pdf.set_text_color(36, 110, 185)
-                pdf.multi_cell(effective_width, 9, _clean(stripped[3:]))
+                clean_title = _clean(stripped[3:]).replace("**", "")
+                pdf.multi_cell(effective_width, 9, clean_title, markdown=True)
                 pdf.ln(2)
 
             elif stripped.startswith('### '):
                 pdf.ln(2)
                 pdf.set_font("Helvetica", "B", 12)
                 pdf.set_text_color(64, 64, 64)
-                pdf.multi_cell(effective_width, 8, _clean(stripped[4:]))
+                clean_title = _clean(stripped[4:]).replace("**", "")
+                pdf.multi_cell(effective_width, 8, clean_title, markdown=True)
                 pdf.ln(1)
 
             elif stripped.startswith('- ') or stripped.startswith('* '):
                 pdf.set_font("Helvetica", "", 11)
                 pdf.set_text_color(50, 50, 50)
-                pdf.multi_cell(effective_width, 7, f"  -  {_clean(stripped[2:])}")
+                pdf.multi_cell(effective_width, 7, f"  -  {_clean(stripped[2:])}", markdown=True)
 
             elif re.match(r'^\d+\. ', stripped):
                 body = re.sub(r'^\d+\. ', '', stripped)
                 pdf.set_font("Helvetica", "", 11)
                 pdf.set_text_color(50, 50, 50)
-                pdf.multi_cell(effective_width, 7, f"  {_clean(body)}")
+                pdf.multi_cell(effective_width, 7, f"  {_clean(body)}", markdown=True)
 
             else:
                 pdf.set_font("Helvetica", "", 11)
                 pdf.set_text_color(50, 50, 50)
-                pdf.multi_cell(effective_width, 7, _clean(stripped))
+                pdf.multi_cell(effective_width, 7, _clean(stripped), markdown=True)
                 pdf.ln(2)
 
         pdf.output(filepath)

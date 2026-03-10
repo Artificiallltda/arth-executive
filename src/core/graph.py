@@ -166,9 +166,9 @@ async def executor_node(state):
     # Injeção de instrução de sistema FORÇADA para evitar alucinação de arquivos
     new_messages = list(state.get("messages", []))
     new_messages.append(SystemMessage(content=(
-        "🚨 INSTRUÇÃO DE SEGURANÇA: O usuário fez uma nova solicitação. "
-        "Você DEVE chamar as ferramentas necessárias (generate_image, generate_pptx, etc.) AGORA. "
-        "NUNCA use nomes de arquivos de mensagens anteriores. Cada arquivo DEVE ser novo."
+        "🚨 INSTRUÇÃO DE SEGURANÇA: O usuário fez uma nova solicitação de arquivo. "
+        "Você DEVE chamar as ferramentas (generate_image, generate_pdf, generate_docx, generate_pptx, create_excel) AGORA ANTES de ditar a resposta final. "
+        "NUNCA crie (alucine) tags <SEND_FILE:> da sua cabeça. Você só pode repassar as tags que as ferramentas te devolverem."
     )))
     return await agent_node({**state, "messages": new_messages}, executor_agent, "arth_executor")
 async def qa_node(state): return await agent_node(state, qa_agent, "arth_qa")
