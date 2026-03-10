@@ -2,6 +2,7 @@ import pandas as pd
 import os
 import json
 import logging
+import asyncio
 from typing import List, Dict, Any, Optional, Union
 from pydantic import BaseModel, Field
 from langchain_core.tools import tool
@@ -56,7 +57,7 @@ def _clean_data(raw_data: Any) -> List[Dict[str, Any]]:
     return cleaned
 
 @tool(args_schema=ReadExcelSchema)
-def read_excel(file_path: str, sheet_name: Union[str, int] = 0) -> List[Dict[str, Any]]:
+async def read_excel(file_path: str, sheet_name: Union[str, int] = 0) -> List[Dict[str, Any]]:
     """
     Lê uma planilha Excel e retorna os dados como uma lista de dicionários.
     Ideal para recuperar dados previamente gerados ou analisar planilhas existentes.
@@ -68,7 +69,7 @@ def read_excel(file_path: str, sheet_name: Union[str, int] = 0) -> List[Dict[str
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"Arquivo não encontrado: {file_path}")
             
-        df = pd.read_excel(file_path, sheet_name=sheet_name)
+        df = await asyncio.to_thread(pd.read_excel, file_path, sheet_name=sheet_name)
         data = df.to_dict(orient="records")
         logger.info(f"Sucesso ao ler Excel: {file_path} ({len(data)} linhas)")
         return data
@@ -77,7 +78,7 @@ def read_excel(file_path: str, sheet_name: Union[str, int] = 0) -> List[Dict[str
         return [{"error": str(e)}]
 
 @tool(args_schema=WriteExcelSchema)
-def create_excel(data: list, file_path: str, sheet_name: str = "Sheet1") -> str:
+async def create_excel(data: list, file_path: str, sheet_name: str = "Sheet1") -> str:
     """
     Cria UMA NOVA planilha Excel (.xlsx) inteira a partir de uma lista de dados JSON.
     Esta ferramenta deve ser usada para consolidar relatórios, tabelas de tendências ou novos documentos.
@@ -97,7 +98,7 @@ def create_excel(data: list, file_path: str, sheet_name: str = "Sheet1") -> str:
         try:
             logger.info("[ExcelGen] Tentando via PANDAS...")
             df = pd.DataFrame(clean_data)
-            df.to_excel(full_path, index=False, sheet_name=sheet_name)
+            await asyncio.to_thread(df.to_excel, full_path, index=False, sheet_name=sheet_name)
             logger.info(f"✅ [ExcelGen] Sucesso via PANDAS: {full_path}")
             return f"Planilha '{file_path}' criada com sucesso com {len(clean_data)} linhas.\n<SEND_FILE:{os.path.basename(full_path)}>"
         except Exception as pe:
@@ -115,7 +116,7 @@ def create_excel(data: list, file_path: str, sheet_name: str = "Sheet1") -> str:
                 for row in clean_data:
                     ws.append([row.get(h, "") for h in headers])
             
-            wb.save(full_path)
+            await asyncio.to_thread(wb.save, full_path)
             logger.info(f"✅ [ExcelGen] Sucesso via FALLBACK OpenPyXL: {full_path}")
             return f"Planilha '{file_path}' criada via fallback seguro com {len(clean_data)} linhas.\n<SEND_FILE:{os.path.basename(full_path)}>"
             
@@ -124,7 +125,7 @@ def create_excel(data: list, file_path: str, sheet_name: str = "Sheet1") -> str:
         return f"Erro ao criar planilha: {str(e)}"
 
 @tool(args_schema=WriteExcelSchema)
-def append_to_excel(data: list, file_path: str, sheet_name: str = "Sheet1") -> str:
+async def append_to_excel(data: list, file_path: str, sheet_name: str = "Sheet1") -> str:
     """
     Adiciona NOVAS LINHAS a uma planilha Excel já existente de forma incremental.
     """
@@ -140,13 +141,13 @@ def append_to_excel(data: list, file_path: str, sheet_name: str = "Sheet1") -> s
             full_path = file_path
             
         if not os.path.exists(full_path):
-            return create_excel.invoke({"data": clean_data, "file_path": file_path, "sheet_name": sheet_name})
+            return await create_excel.ainvoke({"data": clean_data, "file_path": file_path, "sheet_name": sheet_name})
             
-        existing_df = pd.read_excel(full_path, sheet_name=sheet_name)
+        existing_df = await asyncio.to_thread(pd.read_excel, full_path, sheet_name=sheet_name)
         new_df = pd.DataFrame(clean_data)
         
         combined_df = pd.concat([existing_df, new_df], ignore_index=True)
-        combined_df.to_excel(full_path, index=False, sheet_name=sheet_name)
+        await asyncio.to_thread(combined_df.to_excel, full_path, index=False, sheet_name=sheet_name)
         
         logger.info(f"Dados adicionados ao Excel: {full_path}")
         return f"Mais {len(clean_data)} linhas adicionadas à planilha '{os.path.basename(full_path)}'.\n<SEND_FILE:{os.path.basename(full_path)}>"

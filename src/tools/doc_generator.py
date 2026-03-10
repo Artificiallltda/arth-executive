@@ -4,6 +4,7 @@ import re
 import uuid
 import logging
 import unicodedata
+import asyncio
 import unicodedata
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor
@@ -135,7 +136,9 @@ async def generate_docx(title: str, content: str) -> str:
 
         _parse_markdown_to_docx(doc, content)
 
-        doc.save(filepath)
+        # Usar thread isolada para I/O bloqueante (salvar no disco) para não trancar o loop do LangGraph
+        await asyncio.to_thread(doc.save, filepath)
+        
         exists = os.path.exists(filepath)
         logger.info(f"[DOCX] Salvo: {filepath} | exists={exists} | size={os.path.getsize(filepath) if exists else 0}B")
         return f"Documento Word executivo gerado com sucesso: <SEND_FILE:{filename}>"
@@ -259,7 +262,9 @@ async def generate_pdf(title: str, content: str) -> str:
                 pdf.multi_cell(effective_width, 7, _clean(stripped), markdown=True)
                 pdf.ln(2)
 
-        pdf.output(filepath)
+        # Isolando output() (blocking IO sync) para não trancar o supervisor
+        await asyncio.to_thread(pdf.output, filepath)
+        
         exists = os.path.exists(filepath)
         logger.info(f"[PDF] Salvo: {filepath} | exists={exists} | size={os.path.getsize(filepath) if exists else 0}B")
         return f"PDF Executivo gerado com sucesso: <SEND_FILE:{filename}>"

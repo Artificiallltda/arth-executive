@@ -6,6 +6,7 @@ import json
 import uuid
 import logging
 import re
+import asyncio
 from langchain_core.tools import tool
 from pptx import Presentation
 from pptx.util import Inches, Pt
@@ -195,7 +196,8 @@ async def generate_pptx(slides_content_json: str) -> str:
                 img_path=s_data.get("image_path")
             )
 
-        prs.save(filepath)
+        await asyncio.to_thread(prs.save, filepath)
+        
         exists = os.path.exists(filepath)
         size_bytes = os.path.getsize(filepath) if exists else 0
         logger.info(f"[PPTX] Apresentação salva: {filepath} | exists={exists} | size={size_bytes}B")
