@@ -209,130 +209,103 @@ async def generate_docx(title: str = "Documento", content: str = "", filename: O
 
 # ─── PDF ─────────────────────────────────────────────────────────────────────
 
+# ─── Paleta Executiva Manus AI ───────────────────────────────────────────────
+_NAVY   = (10, 12, 16)      # Navy Profundo
+_COBALT = (88, 166, 255)    # Azul Cobalto (Electric)
+_TEXT   = (50, 50, 50)      # Cinza Escuro
+_AZUL_CORP = (28, 78, 158)  # Azul Corporativo
+
 class ArthPDF(FPDF):
     def header(self):
-        self.set_font("Helvetica", "B", 9)
-        self.set_text_color(140, 140, 140)
-        self.cell(0, 8, "ARTH EXECUTIVE  ·  CONFIDENTIAL", 0, 1, "R")
-        # Linha decorativa azul
-        self.set_draw_color(88, 166, 255)
-        self.set_line_width(0.4)
-        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
-        self.ln(5)
+        # Logo/Marca d'água superior
+        self.set_font("Helvetica", "B", 10)
+        self.set_text_color(120, 120, 120)
+        self.cell(0, 10, "ARTH EXECUTIVE  ·  INTELIGÊNCIA ESTRATÉGICA", 0, 1, "R")
+        
+        # Barra decorativa Cobalto
+        self.set_draw_color(*_COBALT)
+        self.set_line_width(0.5)
+        self.line(10, self.get_y(), 200, self.get_y())
+        self.ln(10)
 
     def footer(self):
         self.set_y(-15)
-        self.set_draw_color(88, 166, 255)
-        self.set_line_width(0.3)
-        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
-        self.set_font("Helvetica", "", 8)
-        self.set_text_color(140, 140, 140)
-        self.cell(0, 10, f"Página {self.page_no()}", 0, 0, "C")
+        # Linha superior do rodapé
+        self.set_draw_color(200, 200, 200)
+        self.line(10, self.get_y(), 200, self.get_y())
+        
+        self.set_font("Helvetica", "I", 8)
+        self.set_text_color(150, 150, 150)
+        date_str = datetime.now().strftime("%d/%m/%Y %H:%M")
+        self.cell(0, 10, f"Gerado por Arth Executive em {date_str}  |  Confidencial  |  Página {self.page_no()}", 0, 0, "C")
 
-
-# ==============================================================================
-# 🛡️ BLINDAGEM DE PDF (DO NOT MODIFY) 🛡️
-# Atenção Desenvolvedor/AI:
-# O USO DE `effective_width` AO INVÉS DE `w=0` NO MULTICELL É OBRIGATÓRIO PARA O FPDF2.
-# NÃO MODIFIQUE OS IMPORTES DO FPDF E ESTA LÓGICA DE QUEBRA, EVITE REGRESSÕES 'Not enough horizontal space'.
-# ==============================================================================
 @tool(args_schema=PdfSchema)
 async def generate_pdf(title: str, content: str) -> str:
-    """Cria um documento PDF com visual executivo e suporte total a UTF-8."""
+    """Cria um documento PDF Executivo Premium com design Manus AI."""
     if title is None or content is None:
-        logger.error(f"[PDFGen] ERRO: Parâmetros nulos. title={title}, content={'OK' if content else 'None'}")
-        title = title or "Documento"
+        logger.error(f"[PDFGen] ERRO: Parâmetros nulos. title={title}")
+        title = title or "Documento Executivo"
         content = content or "Conteúdo não fornecido."
         
     try:
-        filename = f"{uuid.uuid4().hex[:6]}-{_safe_filename(title)}.pdf"
-        filepath = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
+        # Garante nome de arquivo limpo e único
+        clean_title = _safe_filename(title)
+        filename = f"{uuid.uuid4().hex[:6]}-{clean_title}.pdf"
+        output_dir = os.path.abspath(settings.DATA_OUTPUTS_PATH)
+        os.makedirs(output_dir, exist_ok=True)
+        filepath = os.path.join(output_dir, filename)
 
         pdf = ArthPDF()
-        pdf.set_margins(left=18, top=15, right=18)
+        pdf.set_margins(left=15, top=15, right=15)
         pdf.set_auto_page_break(auto=True, margin=20)
         pdf.add_page()
 
-        # Título principal
-        pdf.set_font("Helvetica", "B", 22)
-        pdf.set_text_color(28, 78, 158)
-        pdf.multi_cell(0, 14, title, align='C')
+        # TÍTULO PRINCIPAL (Box Colorido)
+        pdf.set_fill_color(*_AZUL_CORP)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_font("Helvetica", "B", 20)
+        pdf.cell(0, 15, title.upper(), 0, 1, 'C', fill=True)
+        pdf.ln(10)
 
-        # Linha decorativa azul
-        pdf.set_draw_color(88, 166, 255)
-        pdf.set_line_width(0.8)
-        y = pdf.get_y() + 3
-        pdf.line(pdf.l_margin, y, pdf.w - pdf.r_margin, y)
-        pdf.ln(12)
+        # Configurações de largura efetiva
+        eff_w = pdf.w - pdf.l_margin - pdf.r_margin
+        pdf.set_text_color(*_TEXT)
 
-        def _clean(text: str) -> str:
-            """Remove caracteres fora do Latin-1 (preserva asteriscos de markdown para formatação fpdf2)."""
-            return text.encode("latin-1", errors="replace").decode("latin-1")
-
-        # Usa a largura efetiva da página em vez de 0 para evitar o bug de espaço horizontal do fpdf2
-        effective_width = pdf.w - pdf.l_margin - pdf.r_margin
-
-        # Conteúdo
+        # Processamento de conteúdo com suporte a Markdown básico
         for line in content.split('\n'):
             stripped = line.strip()
-
             if not stripped:
-                pdf.ln(5)
+                pdf.ln(4)
                 continue
 
             if stripped.startswith('# ') and not stripped.startswith('## '):
-                pdf.ln(4)
-                pdf.set_font("Helvetica", "B", 17)
-                pdf.set_text_color(28, 78, 158)
-                # Removendo asteriscos de titulos pois h1 já é Bold forte no código
-                clean_title = _clean(stripped[2:]).replace("**", "")
-                pdf.multi_cell(effective_width, 11, clean_title, markdown=True)
-                # Underline do H1
-                y2 = pdf.get_y() + 1
-                pdf.set_draw_color(28, 78, 158)
-                pdf.set_line_width(0.5)
-                pdf.line(pdf.l_margin, y2, pdf.w - pdf.r_margin, y2)
-                pdf.ln(5)
-
+                pdf.set_font("Helvetica", "B", 16)
+                pdf.set_text_color(*_AZUL_CORP)
+                pdf.multi_cell(eff_w, 10, stripped[2:].replace("**", ""))
+                pdf.ln(2)
             elif stripped.startswith('## '):
-                pdf.ln(3)
                 pdf.set_font("Helvetica", "B", 14)
-                pdf.set_text_color(36, 110, 185)
-                clean_title = _clean(stripped[3:]).replace("**", "")
-                pdf.multi_cell(effective_width, 9, clean_title, markdown=True)
-                pdf.ln(2)
-
-            elif stripped.startswith('### '):
-                pdf.ln(2)
-                pdf.set_font("Helvetica", "B", 12)
-                pdf.set_text_color(64, 64, 64)
-                clean_title = _clean(stripped[4:]).replace("**", "")
-                pdf.multi_cell(effective_width, 8, clean_title, markdown=True)
+                pdf.set_text_color(*_AZUL_CORP)
+                pdf.multi_cell(eff_w, 9, stripped[3:].replace("**", ""))
                 pdf.ln(1)
-
             elif stripped.startswith('- ') or stripped.startswith('* '):
                 pdf.set_font("Helvetica", "", 11)
-                pdf.set_text_color(50, 50, 50)
-                pdf.multi_cell(effective_width, 7, f"  -  {_clean(stripped[2:])}", markdown=True)
-
-            elif re.match(r'^\d+\. ', stripped):
-                body = re.sub(r'^\d+\. ', '', stripped)
-                pdf.set_font("Helvetica", "", 11)
-                pdf.set_text_color(50, 50, 50)
-                pdf.multi_cell(effective_width, 7, f"  {_clean(body)}", markdown=True)
-
+                pdf.set_text_color(*_TEXT)
+                pdf.multi_cell(eff_w, 7, f"  • {stripped[2:]}", markdown=True)
             else:
                 pdf.set_font("Helvetica", "", 11)
-                pdf.set_text_color(50, 50, 50)
-                pdf.multi_cell(effective_width, 7, _clean(stripped), markdown=True)
-                pdf.ln(2)
+                pdf.set_text_color(*_TEXT)
+                pdf.multi_cell(eff_w, 7, stripped, markdown=True)
 
-        # Isolando output() (blocking IO sync) para não trancar o supervisor
         await asyncio.to_thread(pdf.output, filepath)
         
-        exists = os.path.exists(filepath)
-        logger.info(f"[PDF] Salvo: {filepath} | exists={exists} | size={os.path.getsize(filepath) if exists else 0}B")
-        return f"PDF Executivo gerado com sucesso: <SEND_FILE:{filename}>"
+        if os.path.exists(filepath):
+            logger.info(f"[PDF] ✅ PDF Premium salvo: {filepath} ({os.path.getsize(filepath)} bytes)")
+            return f"PDF Executivo gerado com sucesso: <SEND_FILE:{filename}>"
+        return "Falha ao gravar arquivo PDF."
+    except Exception as e:
+        logger.error(f"[PDF] ❌ Erro: {e}", exc_info=True)
+        return f"Falha no PDF: {str(e)}"
     except Exception as e:
         logger.error(f"[PDF] Erro: {e}", exc_info=True)
         return f"Falha ao gerar PDF: {str(e)}"

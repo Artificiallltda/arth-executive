@@ -384,54 +384,43 @@ async def supervisor_node(state: AgentState):
                 correct_retry_agent = get_agent_for_file_type(file_ext)
                 return {"next_agent": correct_retry_agent}
 
-    # --- SUPORTE A ENTREGA FORÇADA (09/03/2026) ---
-    # Se o agente retornou um campo 'file' E 'force_delivery' (ou se detectarmos tag SEND_FILE)
-    # tentamos entregar imediatamente via Telegram.
-    last_msg = messages[-1] if messages else None
-    if last_msg and last_msg.name in members:
-        content_str = str(last_msg.content)
-        # Tenta extrair tag SEND_FILE ou caminho de arquivo explícito (se o agente for estruturado)
-        file_match = re.search(r'<(?:SEND_FILE):([^>]+)>', content_str)
-        
-        # Algumas vezes o agente retorna um dict estruturado (não é o padrão do react_agent do langgraph, 
-        # mas podemos ter componentes que injetam isso). No React Agent padrão, o 'content' é string.
-        # Se for string com a tag, tentamos o envio proativo.
-        if file_match:
-            filename = file_match.group(1).strip()
-            full_path = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
-            
-            if os.path.exists(full_path):
-                logger.info(f"[Supervisor] 📦 DETECTADA TAG DE ARQUIVO. Tentando entrega proativa: {filename}")
-                from src.router.adapters.telegram import safe_send_file
-                # Nota: precisamos do 'update' original ou chat_id. 
-                # O state['messages'] geralmente não tem o objeto update do telegram.
-                # No nosso message_handler, nós passamos o chat_id no SystemMessage de contexto se necessário.
-                # Mas para simplificar aqui e garantir que funcione, o safe_send_file precisa do chat_id.
-                
-                # Buscamos o chat_id no estado
-                chat_id = state.get("user_id") # No Telegram Adapter, user_id costuma ser o chat_id
-                if chat_id:
-                    # Rodar sem dar await no node principal pode ser arriscado, 
-                    # mas o safe_send_file já é async.
-                    await asyncio.create_task(safe_send_file(full_path, chat_id))
-                    logger.info(f"[Supervisor] Chamada de entrega proativa disparada para {chat_id}")
-
+    # --- SUPORTE A ENTREGA PROATIVA BLINDADA (09/03/2026) ---
     if routing_result.next_agent == "FINISH":
-        messages = list(state.get("messages", []))
+        last_msg = messages[-1] if messages else None
+        if last_msg and last_msg.name in members:
+            content_str = str(last_msg.content)
+            # Regex robusta: captura qualquer tag SEND_FILE ou SEND_AUDIO
+            file_tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):([^>]+)>', content_str)
+            
+            if file_tags:
+                from src.router.adapters.telegram import safe_send_file
+                chat_id = state.get("user_id")
+                
+                for filename in file_tags:
+                    filename = filename.strip()
+                    # Tenta localizar o arquivo de forma absoluta
+                    output_dir = os.path.abspath(settings.DATA_OUTPUTS_PATH)
+                    full_path = os.path.join(output_dir, filename)
+                    
+                    logger.info(f"[Supervisor] 📦 Verificando arquivo para entrega: {filename}")
+                    logger.info(f"[Supervisor] 🔍 Caminho absoluto: {full_path}")
+                    
+                    if os.path.exists(full_path):
+                        if chat_id:
+                            logger.info(f"[Supervisor] 🚀 Disparando entrega proativa de '{filename}' para {chat_id}")
+                            await asyncio.create_task(safe_send_file(full_path, chat_id))
+                        else:
+                            logger.warning(f"[Supervisor] ⚠️ chat_id não encontrado no estado. Não é possível enviar {filename}")
+                    else:
+                        logger.error(f"[Supervisor] ❌ Arquivo FÍSICO não encontrado: {full_path}")
+
+        # Lógica de finalização original...
         last_human_idx = max((i for i, m in enumerate(messages) if m.type == "human"), default=0)
         msgs_this_turn = messages[last_human_idx + 1:]
-        
         last_specialist_msg = next((m for m in reversed(msgs_this_turn) if m.type == "ai" and m.name in members), None)
-
         if last_specialist_msg:
-            # Preserva a resposta rica do especialista (com ou sem arquivo, se ele falou algo útil)
-            logger.info(f"[Supervisor] Finalizando. Preservando resposta de {last_specialist_msg.name}")
             return {"next_agent": "FINISH"}
-
-        return {
-            "next_agent": "FINISH",
-            "messages": [AIMessage(content=routing_result.final_answer or "Tarefa concluída.", name="arth_orchestrator")]
-        }
+        return {"next_agent": "FINISH", "messages": [AIMessage(content=routing_result.final_answer or "Tarefa concluída.", name="arth_orchestrator")]}
 
     # Correção do Handoff React Agent:
     # Se o último step foi um agente (AIMessage), o próximo agente React 
