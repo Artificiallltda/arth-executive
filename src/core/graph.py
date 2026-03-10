@@ -65,11 +65,17 @@ ALL_TOOLS = [
     generate_audio, query_knowledge_base, upload_document_to_knowledge_base,
     create_excel, append_to_excel, read_excel
 ]
+# Blindagem contra ferramentas nulas (PARTE 2)
+ALL_TOOLS = [t for t in ALL_TOOLS if t is not None]
 
 # --- Criação dos Agentes Especialistas ---
 # NOVO: Reduzimos a carga cognitiva dividindo as ferramentas
 def create_specialist_agent(tools, system_prompt: str):
-    return create_react_agent(model=llm_with_fallbacks, tools=tools, prompt=system_prompt)
+    # Garante que tools é uma lista válida
+    safe_tools = [t for t in tools if t is not None]
+    if not safe_tools:
+        logger.warning(f"Agente criado sem ferramentas válidas! Prompt: {system_prompt[:50]}")
+    return create_react_agent(model=llm_with_fallbacks, tools=safe_tools, prompt=system_prompt)
 
 researcher_agent = create_specialist_agent([search_web, read_url, read_document, search_memory, save_memory, query_knowledge_base], load_persona("researcher.md"))
 planner_agent = create_specialist_agent([get_current_time, search_memory, save_memory, schedule_reminder], load_persona("planner.md"))
@@ -237,6 +243,14 @@ def validate_agent_choice(agent_name: str, state: dict) -> str:
     return agent_name
 
 async def supervisor_node(state: AgentState):
+    # ==================================================================
+    # RASTREAMENTO DE ESTADO (PARTE 3)
+    # ==================================================================
+    logger.info(f"[GRAPH] State antes do roteamento: { {k: type(v).__name__ for k, v in state.items()} }")
+    if state is None:
+        logger.error("[GRAPH] State é None! Corrigindo para dict vazio.")
+        state = {}
+
     messages = list(state.get("messages", []))
 
     # Índice do último HumanMessage = início do turno atual

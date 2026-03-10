@@ -109,31 +109,34 @@ def _parse_markdown_to_docx(doc: Document, content: str):
             _add_rich_text(p, stripped, size_pt=11, color=_CINZA_BODY)
 
 
-@tool
-async def generate_docx(params: Any) -> str:
+from pydantic import BaseModel, Field
+from typing import Optional, Any, Union
+
+class DocxSchema(BaseModel):
+    title: Optional[str] = Field(default="Documento", description="Título do documento.")
+    content: Optional[str] = Field(default=None, description="Conteúdo em texto ou markdown para o documento.")
+    filename: Optional[str] = Field(default=None, description="Nome do arquivo .docx opcional.")
+
+class PdfSchema(BaseModel):
+    title: Optional[str] = Field(default="Documento", description="Título do PDF.")
+    content: Optional[str] = Field(default=None, description="Conteúdo do PDF.")
+
+@tool(args_schema=DocxSchema)
+async def generate_docx(title: str = "Documento", content: str = "", filename: Optional[str] = None) -> str:
     """Gera DOCX com tratamento robusto e formatação melhorada."""
+    if not content:
+        logger.error("[DOCXGen] ERRO CRÍTICO: content é None ou vazio!")
+        return "Erro: O conteúdo do documento não pode estar vazio."
+
     try:
         # ==================================================================
         # NORMALIZAÇÃO DE PARÂMETROS
         # ==================================================================
-        if isinstance(params, str):
-            title = "Documento"
-            content = params
-            filename = f"documento_{int(datetime.now().timestamp())}.docx"
-        elif isinstance(params, dict):
-            title = params.get('title', params.get('titulo', 'Documento'))
-            content = params.get('content', params.get('conteudo', ''))
-            filename = params.get('filename', f"documento_{int(datetime.now().timestamp())}.docx")
-        elif isinstance(params, list):
-            title = "Documento"
-            content = "\n\n".join([str(item) for item in params])
-            filename = f"documento_{int(datetime.now().timestamp())}.docx"
-        else:
-            title = "Documento"
-            content = str(params)
+        if not filename:
             filename = f"documento_{int(datetime.now().timestamp())}.docx"
         
-        # Garante diretório de saída
+        if not filename.endswith(".docx"):
+            filename += ".docx"
         output_dir = settings.DATA_OUTPUTS_PATH
         os.makedirs(output_dir, exist_ok=True)
         filepath = os.path.join(output_dir, filename)
@@ -233,9 +236,14 @@ class ArthPDF(FPDF):
 # O USO DE `effective_width` AO INVÉS DE `w=0` NO MULTICELL É OBRIGATÓRIO PARA O FPDF2.
 # NÃO MODIFIQUE OS IMPORTES DO FPDF E ESTA LÓGICA DE QUEBRA, EVITE REGRESSÕES 'Not enough horizontal space'.
 # ==============================================================================
-@tool
+@tool(args_schema=PdfSchema)
 async def generate_pdf(title: str, content: str) -> str:
     """Cria um documento PDF com visual executivo e suporte total a UTF-8."""
+    if title is None or content is None:
+        logger.error(f"[PDFGen] ERRO: Parâmetros nulos. title={title}, content={'OK' if content else 'None'}")
+        title = title or "Documento"
+        content = content or "Conteúdo não fornecido."
+        
     try:
         filename = f"{uuid.uuid4().hex[:6]}-{_safe_filename(title)}.pdf"
         filepath = os.path.join(settings.DATA_OUTPUTS_PATH, filename)

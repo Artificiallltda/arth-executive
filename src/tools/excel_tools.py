@@ -3,6 +3,7 @@ import os
 import json
 import logging
 import asyncio
+from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
 from pydantic import BaseModel, Field
 from langchain_core.tools import tool
@@ -13,13 +14,13 @@ logger = logging.getLogger(__name__)
 # --- SCHEMAS EXPLICITOS ---
 
 class ReadExcelSchema(BaseModel):
-    file_path: str = Field(..., description="O nome do arquivo Excel (ex: 'dados.xlsx') a ser lido.")
+    file_path: Optional[str] = Field(default=None, description="O nome do arquivo Excel (ex: 'dados.xlsx') a ser lido.")
     sheet_name: Union[str, int, None] = Field(default=0, description="Opcional. Nome da aba ou índice (0 para a primeira).")
 
 class WriteExcelSchema(BaseModel):
-    data: Any = Field(..., description="OBRIGATÓRIO. Os dados para criar a planilha. Pode ser uma lista de dicionários, um dicionário único ou uma string JSON contendo as linhas da planilha.")
-    file_path: str = Field(..., description="OBRIGATÓRIO. O nome do arquivo Excel (ex: 'relatorio.xlsx').")
-    sheet_name: str = Field(default="Sheet1", description="Opcional. Nome da aba.")
+    data: Optional[Any] = Field(default=None, description="OBRIGATÓRIO. Os dados para criar a planilha.")
+    file_path: Optional[str] = Field(default=None, description="OBRIGATÓRIO. O nome do arquivo Excel (ex: 'relatorio.xlsx').")
+    sheet_name: Optional[str] = Field(default="Sheet1", description="Opcional. Nome da aba.")
 
 def _clean_data(raw_data: Any) -> List[Dict[str, Any]]:
     """Tenta limpar e consertar o payload de dados enviado pelo modelo Gemini/OpenAI."""
@@ -62,6 +63,10 @@ async def read_excel(file_path: str, sheet_name: Union[str, int] = 0) -> List[Di
     Lê uma planilha Excel e retorna os dados como uma lista de dicionários.
     Ideal para recuperar dados previamente gerados ou analisar planilhas existentes.
     """
+    if file_path is None:
+        logger.error("[ExcelTool] Erro crítico: file_path é None!")
+        return [{"error": "file_path não pode ser nulo"}]
+        
     try:
         if not os.path.isabs(file_path):
             file_path = os.path.join(settings.DATA_OUTPUTS_PATH, file_path)
@@ -84,6 +89,11 @@ async def create_excel(data: list, file_path: str, sheet_name: str = "Sheet1") -
     Esta ferramenta deve ser usada para consolidar relatórios, tabelas de tendências ou novos documentos.
     O campo 'data' deve ser OBRIGATORIAMENTE uma lista (array).
     """
+    if data is None or file_path is None:
+        logger.error(f"[ExcelGen] ERRO CRÍTICO: Parâmetros nulos! data={data}, file_path={file_path}")
+        if data is None: data = []
+        if file_path is None: file_path = f"relatorio_{int(datetime.now().timestamp())}.xlsx"
+
     try:
         logger.info(f"🚀 [ExcelGen] Iniciando criação de {file_path}...")
         clean_data = _clean_data(data)
@@ -130,6 +140,10 @@ async def append_to_excel(data: list, file_path: str, sheet_name: str = "Sheet1"
     """
     Adiciona NOVAS LINHAS a uma planilha Excel já existente de forma incremental.
     """
+    if data is None:
+        logger.error("[ExcelTool] Erro: append_to_excel recebeu data=None. Usando lista vazia.")
+        data = []
+        
     try:
         clean_data = _clean_data(data)
         

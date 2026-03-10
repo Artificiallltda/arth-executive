@@ -14,6 +14,7 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from src.config import settings
 from typing import Any, Union
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -169,12 +170,19 @@ def _build_content(prs, title, bullets, img_path=None):
         r2.font.color.rgb = _TEXT
 
 
-@tool
+class PpptxSchema(BaseModel):
+    slides_content_json: Any = Field(..., description="Conteúdo dos slides em JSON ou lista.")
+
+@tool(args_schema=PpptxSchema)
 async def generate_pptx(slides_content_json: Any) -> str:
     """
     Gera apresentação executiva premium com design Manus AI (Navy + Cobalt Blue, Calibri).
     Aceita string JSON, Dict (ideal) com 'presentation_title' e 'slides', ou Lista de strings.
     """
+    if slides_content_json is None:
+        logger.error("[PPTXGen] ERRO: slides_content_json é None! Usando dados genéricos.")
+        slides_content_json = {"title": "Apresentação", "slides": [{"title": "Aviso", "bullets": ["Conteúdo não fornecido pelo modelo."]}]}
+
     try:
         filename = f"Exec-Deck-{uuid.uuid4().hex[:6]}.pptx"
         filepath = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
