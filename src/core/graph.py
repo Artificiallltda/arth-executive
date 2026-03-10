@@ -214,7 +214,24 @@ async def supervisor_node(state: AgentState):
         return {"next_agent": "FINISH"}
 
     routing_result = await supervisor_chain.ainvoke(state)
-    logger.info(f"[ROUTER] Para: {routing_result.next_agent}")
+    logger.info(f"[ROUTER] Decisão LLM: {routing_result.next_agent}")
+
+    # --- FORÇAR EXECUTOR SE ARQUIVO AINDA NÃO FOI GERADO (BLINDAGEM CONTRA FINISH PREMATURO) ---
+    if routing_result.next_agent == "FINISH" and msgs_this_turn:
+        # Pega a requisição original do ser humano neste turno
+        human_req = messages[last_human_idx].content.lower()
+        needs_file = any(kw in human_req for kw in ["pptx", "apresentação", "slide", "pdf", "docx", "excel", "planilha"])
+        
+        # Verifica se o executor já obteve sucesso (gerou alguma tag SEND_FILE) neste turno
+        has_file = any(
+            any(tag in str(m.content) for tag in ["<SEND_FILE:", "<SEND_AUDIO:"])
+            for m in msgs_this_turn if getattr(m, "name", "") in members
+        )
+
+        # Se o usuário pediu documento e AINDA não tem arquivo, DEVE ir pro Executor
+        if needs_file and not has_file and specialist_runs.get("arth_executor", 0) < 1:
+            logger.warning("[Supervisor] Override: LLM tentou FINISH mas usuário pediu documento/pptx. Forçando arth_executor.")
+            routing_result.next_agent = "arth_executor"
 
     if routing_result.next_agent == "FINISH":
         messages = list(state.get("messages", []))
