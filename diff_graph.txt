@@ -1,0 +1,47 @@
+commit b4063059a508f5ea48850f0098d9411bb9cda95b
+Author: Artificiallltda <artificiall@artificiallcorporate.org>
+Date:   Sat Mar 7 21:37:40 2026 -0300
+
+    fix(graph): preserve SEND_FILE tags from inner agent tool calls in outer state
+    
+    create_react_agent stores ToolMessages only in its inner state. When
+    agent_node returned only result["messages"][-1], tags like <SEND_FILE:...>
+    from generate_image tool results were lost if the LLM didn't repeat them.
+    Now agent_node scans all inner messages and appends any missing file/audio
+    tags to the final message before returning to the outer graph state.
+    
+    Also adds Telegram sendPhoto API response logging to surface silent failures.
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+diff --git a/src/core/graph.py b/src/core/graph.py
+index d965d6e..b62daf3 100644
+--- a/src/core/graph.py
++++ b/src/core/graph.py
+@@ -1,4 +1,5 @@
+ import os
++import re
+ import logging
+ from typing import Literal, Optional, List
+ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+@@ -82,7 +83,19 @@ async def agent_node(state, agent, name):
+         )] + messages
+ 
+     result = await agent.ainvoke({**state, "messages": messages}, RunnableConfig(recursion_limit=25))
+-    msg = result["messages"][-1]
++    inner_messages = result["messages"]
++    msg = inner_messages[-1]
++
++    # Garante que tags de arquivo/áudio geradas por ferramentas cheguem ao estado externo.
++    # O LLM às vezes não repete as tags na resposta final — este passo recupera do histórico interno.
++    all_inner_text = " ".join(str(m.content) for m in inner_messages)
++    file_tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):[^>]+>', all_inner_text)
++    if file_tags:
++        msg_content = str(msg.content) if not isinstance(msg.content, str) else msg.content
++        missing = [t for t in file_tags if t not in msg_content]
++        if missing:
++            msg = msg.model_copy(update={"content": msg_content + "\n" + "\n".join(missing)})
++
+     msg.name = name
+     return {
+         "messages": [msg],

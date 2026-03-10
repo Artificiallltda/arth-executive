@@ -1,0 +1,10 @@
+[ImageGen] imagen falhou (ClientError: 400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'Imagen 3 is only available on paid plans. Please upgrade your account at https://ai.dev/projects.', 'status': 'INVALID_ARGUMENT'}}). Tentando gemini-2.5-flash...
+[ImageGen] Gemini falhou (ClientError: 400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'This model only supports text output.', 'status': 'INVALID_ARGUMENT'}}). Tentando OpenAI DALL-E 3...
+[ImageGen] DALL-E 3 falhou: Error code: 400 - {'error': {'message': 'Billing hard limit has been reached', 'type': 'image_generation_user_error', 'param': None, 'code': 'billing_hard_limit_reached'}}
+Testando API Key terminada em... yVAk
+Tentando gerar imagem...
+
+
+=== RESULTADO ===
+Erro CrÝtico na geraþÒo de imagem. Limites de Quota excedidos em todas as APIs. Error code: 400 - {'error': {'message': 'Billing hard limit has been reached', 'type': 'image_generation_user_error', 'param': None, 'code': 'billing_hard_limit_reached'}}
+=================

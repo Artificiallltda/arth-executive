@@ -1,0 +1,10 @@
+[ImageGen] imagen falhou (ClientError: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'models/imagen-3.0-generate-002 is not found for API version v1beta, or is not supported for predict. Call ListModels to see the list of available models and their supported methods.', 'status': 'NOT_FOUND'}}). Tentando gemini-2.5-flash...
+[ImageGen] Gemini falhou (ClientError: 400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'This model only supports text output.', 'status': 'INVALID_ARGUMENT'}}). Tentando OpenAI DALL-E 3...
+[ImageGen] DALL-E 3 falhou: Error code: 400 - {'error': {'message': 'Billing hard limit has been reached', 'type': 'image_generation_user_error', 'param': None, 'code': 'billing_hard_limit_reached'}}
+Testando API Key terminada em... yVAk
+Tentando gerar imagem...
+
+
+=== RESULTADO ===
+Erro CrÝtico na geraþÒo de imagem. Limites de Quota excedidos em todas as APIs. Error code: 400 - {'error': {'message': 'Billing hard limit has been reached', 'type': 'image_generation_user_error', 'param': None, 'code': 'billing_hard_limit_reached'}}
+=================
