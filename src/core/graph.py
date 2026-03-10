@@ -250,6 +250,17 @@ async def supervisor_node(state: AgentState):
             "messages": [AIMessage(content=routing_result.final_answer or "Tarefa concluída.", name="arth_orchestrator")]
         }
 
+    # Correção do Handoff React Agent:
+    # Se o último step foi um agente (AIMessage), o próximo agente React 
+    # assumirá que a mensagem final já foi gerada e retornará imediatamente.
+    # Precisamos injetar uma HumanMessage instrucionando-o a prosseguir.
+    if messages and getattr(messages[-1], "type", "") == "ai":
+        handoff_msg = HumanMessage(
+            content=f"O Orquestrador alocou a tarefa para você ({routing_result.next_agent}). Analise o contexto acima e execute o que for necessário para atender o usuário.",
+            name="arth_orchestrator"
+        )
+        return {"next_agent": routing_result.next_agent, "messages": [handoff_msg]}
+
     return {"next_agent": routing_result.next_agent}
 
 def build_arth_graph():
