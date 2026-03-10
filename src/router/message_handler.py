@@ -52,7 +52,27 @@ def _reset_session(channel: str, user_id: str):
 
 async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", status_callback=None, user_name: str = "User", media_data: dict = None):
     """Motor de raciocínio integral com suporte a documentos e sanitização HTML."""
-    logger.info(f"[{channel.upper()}] Processando mensagem de {user_name} ({user_id})")
+    
+    # ==================================================================
+    # VALIDAÇÃO ABSOLUTA (IMPEDE None DE CHEGAR NO PYDANTIC)
+    # ==================================================================
+    if text is None:
+        logger.error("[Brain] ❌ text (user_input) é None! Corrigindo para string vazia.")
+        text = ""
+    
+    if not isinstance(text, str):
+        logger.warning(f"[Brain] text não é string: {type(text)}. Convertendo.")
+        text = str(text) if text is not None else ""
+    
+    if user_id is None:
+        logger.error("[Brain] ❌ user_id é None! Usando 'unknown'.")
+        user_id = "unknown"
+    
+    # LOG DETALHADO DO QUE ESTÁ CHEGANDO
+    logger.debug(f"[Brain] user_input type: {type(text)}, value: {repr(text)[:100]}")
+    logger.debug(f"[Brain] user_id type: {type(user_id)}, value: {user_id}")
+    
+    logger.info(f"[{channel.upper()}] Processando mensagem de {user_name} ({user_id}): '{text[:50]}...'")
     
     if _is_duplicate(str(user_id), text):
         logger.info(f"[Deduplication] Ignorando mensagem repetida de {user_id}")

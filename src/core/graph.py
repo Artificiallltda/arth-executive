@@ -31,6 +31,7 @@ from src.tools.audio_generator import generate_audio
 from src.tools.rag_tools import query_knowledge_base, upload_document_to_knowledge_base
 from src.tools.excel_tools import create_excel, append_to_excel, read_excel
 from src.core.capabilities import can_agent_generate, get_agent_for_file_type
+from src.core.agents.arth_analyst import arth_analyst_processor
 from src.config import settings
 
 logger = logging.getLogger(__name__)
@@ -176,18 +177,12 @@ async def executor_node(state):
     return await agent_node({**state, "messages": new_messages}, executor_agent, "arth_executor")
 async def qa_node(state): return await agent_node(state, qa_agent, "arth_qa")
 async def analyst_node(state): 
-    new_messages = list(state.get("messages", []))
-    new_messages.append(SystemMessage(content=(
-        "🚨 INSTRUÇÃO DE DOCUMENTAÇÃO (CRÍTICO): Se houver conteúdo de pesquisa feito pelo arth_researcher no histórico recente, "
-        "você DEVE ler esse conteúdo e injetá-lo na íntegra DENTRO do argumento 'content' ao chamar as ferramentas de geração (PDF/DOCX/PPTX).\n"
-        "Exemplo de formatação para o 'content':\n"
-        "RELATÓRIO DE PESQUISA\n=====================\n[Cole o texto da pesquisa aqui]\n--- Fim do relatório ---\n\n"
-        "🚨 INSTRUÇÃO DE SEGURANÇA: NUNCA crie (alucine) tags <SEND_FILE:> da sua cabeça. "
-        "Você DEVE chamar as ferramentas (generate_pdf, generate_docx, generate_pptx, create_excel) AGORA ANTES de ditar a resposta final.\n\n"
-        "📊 REGRA PARA EXCEL: Ao gerar Excel, finalize sua RESPOSTA de texto com a tag <SEND_FILE:nome.xlsx> e garanta que os dados sejam reais e estruturados. "
-        "Se você estiver retornando um objeto estruturado, inclua 'force_delivery': True."
-    )))
-    return await agent_node({**state, "messages": new_messages}, analyst_agent, "arth_analyst")
+    # ==================================================================
+    # PROCESSADOR DE ESTADO DO ANALISTA (PARTE 3)
+    # Protege contra campos None e injeta instruções de geradores
+    # ==================================================================
+    updated_state = await arth_analyst_processor(state)
+    return await agent_node(updated_state, analyst_agent, "arth_analyst")
 
 # --- Orquestrador (Supervisor) ---
 members = ["arth_researcher", "arth_planner", "arth_executor", "arth_qa", "arth_analyst"]
@@ -270,6 +265,22 @@ async def supervisor_node(state: AgentState):
     validated_agent = validate_agent_choice(routing_result.next_agent, state)
     if validated_agent != routing_result.next_agent:
         routing_result.next_agent = validated_agent
+
+    # ==================================================================
+    # PROTEÇÃO CONTRA None NO ANALISTA (PARTE 2)
+    # ==================================================================
+    if routing_result.next_agent == "arth_analyst":
+        logger.info(f"[Graph] Preparando para chamar arth_analyst")
+        
+        # Garante que content existe no estado para evitar erro Pydantic de None
+        if "content" not in state or state.get("content") is None:
+            state["content"] = ""
+        
+        # Garante que user_input existe
+        if "user_input" not in state or state.get("user_input") is None:
+            state["user_input"] = ""
+            
+        logger.info(f"[Graph] State preparado para Analyst: content={len(str(state.get('content','')))}, user_input='{state.get('user_input','')[:50]}'")
 
     # --- FORÇAR EXECUTOR SE ARQUIVO AINDA NÃO FOI GERADO (BLINDAGEM CONTRA FINISH PREMATURO) ---
     if routing_result.next_agent == "FINISH" and msgs_this_turn:
