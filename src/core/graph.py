@@ -57,16 +57,25 @@ async def wait_for_file(file_path: str, max_wait: float = 5.0, check_interval: f
     logger.error(f"[FileWait] ❌ Timeout após {max_wait}s aguardando: {file_path}")
     return False
 
-# --- Setup dos Modelos ---
-openai_llm = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0)
-gemini_llm = ChatGoogleGenerativeAI(
+# --- Setup dos Modelos Especializados (Configuração Definitiva) ---
+# 🧠 SUPERVISOR: Raciocínio profundo para roteamento perfeito
+supervisor_llm = ChatOpenAI(model="gpt-4o", temperature=0, max_tokens=4000)
+
+# 📝 ANALISTA: Redação de documentos complexos (DOCX/Excel/PDF)
+analyst_llm = ChatOpenAI(model="gpt-4o", temperature=0.3, max_tokens=8000)
+
+# ⚡ EXECUÇÃO RÁPIDA: Pesquisa e Planejamento
+fast_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+# 🎨 EXECUTOR: Mídias e Imagens (temperatura para criatividade)
+executor_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.5)
+
+# fallback de segurança
+gemini_fallback = ChatGoogleGenerativeAI(
     model=settings.GEMINI_MODEL,
     google_api_key=settings.GEMINI_API_KEY, 
     temperature=0
 )
-
-# Gemini como Primário, OpenAI como Fallback
-llm_with_fallbacks = gemini_llm.with_fallbacks([openai_llm])
 
 # --- Carregamento de Personas ---
 def load_persona(agent_filename: str) -> str:
@@ -89,20 +98,24 @@ ALL_TOOLS = [
 # Blindagem contra ferramentas nulas (PARTE 2)
 ALL_TOOLS = [t for t in ALL_TOOLS if t is not None]
 
-# --- Criação dos Agentes Especialistas ---
-# NOVO: Reduzimos a carga cognitiva dividindo as ferramentas
-def create_specialist_agent(tools, system_prompt: str):
+# --- Criação dos Agentes Especialistas com LLMs Distintos ---
+def create_specialist_agent(tools, system_prompt: str, model_instance):
     # Garante que tools é uma lista válida
     safe_tools = [t for t in tools if t is not None]
     if not safe_tools:
         logger.warning(f"Agente criado sem ferramentas válidas! Prompt: {system_prompt[:50]}")
-    return create_react_agent(model=llm_with_fallbacks, tools=safe_tools, prompt=system_prompt)
+    return create_react_agent(model=model_instance.with_fallbacks([gemini_fallback]), tools=safe_tools, prompt=system_prompt)
 
-researcher_agent = create_specialist_agent([search_web, read_url, read_document, search_memory, save_memory, query_knowledge_base], load_persona("researcher.md"))
-planner_agent = create_specialist_agent([get_current_time, search_memory, save_memory, schedule_reminder], load_persona("planner.md"))
-executor_agent = create_specialist_agent([get_current_time, execute_python_code, save_memory, search_memory, ask_chefia, generate_image, generate_audio, upload_document_to_knowledge_base], load_persona("executor.md")) # Apenas Mídias e Scripts
-qa_agent = create_specialist_agent([search_memory, save_memory], load_persona("qa.md"))
-analyst_agent = create_specialist_agent([analyze_data_file, read_document, create_excel, append_to_excel, read_excel, generate_pdf, generate_docx, generate_pptx, audit_supabase_security, audit_database_schema, search_memory, save_memory], load_persona("analyst.md")) # Documentos e Excel
+# Pesquisador e Planejador usam o modelo rápido (Mini)
+researcher_agent = create_specialist_agent([search_web, read_url, read_document, search_memory, save_memory, query_knowledge_base], load_persona("researcher.md"), fast_llm)
+planner_agent = create_specialist_agent([get_current_time, search_memory, save_memory, schedule_reminder], load_persona("planner.md"), fast_llm)
+
+# Executor usa o modelo rápido
+executor_agent = create_specialist_agent([get_current_time, execute_python_code, save_memory, search_memory, ask_chefia, generate_image, generate_audio, upload_document_to_knowledge_base], load_persona("executor.md"), executor_llm)
+
+# QA e ANALISTA usam o Cérebro Grande (GPT-4o) para garantir perfeição nos dados
+qa_agent = create_specialist_agent([search_memory, save_memory], load_persona("qa.md"), supervisor_llm)
+analyst_agent = create_specialist_agent([analyze_data_file, read_document, create_excel, append_to_excel, read_excel, generate_pdf, generate_docx, generate_pptx, audit_supabase_security, audit_database_schema, search_memory, save_memory], load_persona("analyst.md"), analyst_llm)
 
 async def agent_node(state, agent, name):
     messages = list(state.get("messages", []))

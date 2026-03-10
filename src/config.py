@@ -12,10 +12,14 @@ class Settings(BaseSettings):
     # --- PATHS ---
     # Base do projeto (arth-executive/)
     BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    # Pasta de saídas de dados
-    DATA_OUTPUTS_PATH: str = os.path.join(BASE_DIR, "data", "outputs")
-    # Pasta das Personas (Skins) - Localizada dentro de src/agents
+
+    # Pasta de saídas de dados (Blindagem Docker/Railway)
+    # Se estiver rodando no Linux (Docker), usa caminho absoluto /app
+    DATA_OUTPUTS_PATH: str = "/app/data/outputs" if os.name != 'nt' else os.path.join(BASE_DIR, "data", "outputs")
+
+    # Pasta das Personas (Skins)
     SQUAD_PATH: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents")
+
 
     # --- MODELS ---
     PRIMARY_MODEL: str = os.getenv("PRIMARY_MODEL", "openai") # Voltando para OpenAI como motor principal

@@ -39,6 +39,19 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Arth Executive AI", version="0.1.0", lifespan=lifespan)
+
+def log_resources():
+    try:
+        import psutil
+        m = psutil.virtual_memory()
+        logger.info(f"[INFRA] RAM: {m.percent}% | CPU: {psutil.cpu_percent()}%")
+    except: pass
+
+@app.middleware("http")
+async def monitor_infra(request, call_next):
+    log_resources()
+    return await call_next(request)
+
 app.include_router(message_router, prefix="/api/v1")
 
 
