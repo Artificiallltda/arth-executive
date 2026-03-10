@@ -1,7 +1,9 @@
 import os
 import re
 import logging
-from typing import Literal, Optional, List
+import asyncio
+from datetime import datetime
+from typing import Literal, Optional, List, Any
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnableConfig
@@ -181,7 +183,9 @@ async def analyst_node(state):
         "Exemplo de formatação para o 'content':\n"
         "RELATÓRIO DE PESQUISA\n=====================\n[Cole o texto da pesquisa aqui]\n--- Fim do relatório ---\n\n"
         "🚨 INSTRUÇÃO DE SEGURANÇA: NUNCA crie (alucine) tags <SEND_FILE:> da sua cabeça. "
-        "Você DEVE chamar as ferramentas (generate_pdf, generate_docx, generate_pptx, create_excel) AGORA ANTES de ditar a resposta final."
+        "Você DEVE chamar as ferramentas (generate_pdf, generate_docx, generate_pptx, create_excel) AGORA ANTES de ditar a resposta final.\n\n"
+        "📊 REGRA PARA EXCEL: Ao gerar Excel, finalize sua RESPOSTA de texto com a tag <SEND_FILE:nome.xlsx> e garanta que os dados sejam reais e estruturados. "
+        "Se você estiver retornando um objeto estruturado, inclua 'force_delivery': True."
     )))
     return await agent_node({**state, "messages": new_messages}, analyst_agent, "arth_analyst")
 
@@ -310,6 +314,38 @@ async def supervisor_node(state: AgentState):
                 file_ext = os.path.splitext(generated_file_path)[1].replace(".", "")
                 correct_retry_agent = get_agent_for_file_type(file_ext)
                 return {"next_agent": correct_retry_agent}
+
+    # --- SUPORTE A ENTREGA FORÇADA (09/03/2026) ---
+    # Se o agente retornou um campo 'file' E 'force_delivery' (ou se detectarmos tag SEND_FILE)
+    # tentamos entregar imediatamente via Telegram.
+    last_msg = messages[-1] if messages else None
+    if last_msg and last_msg.name in members:
+        content_str = str(last_msg.content)
+        # Tenta extrair tag SEND_FILE ou caminho de arquivo explícito (se o agente for estruturado)
+        file_match = re.search(r'<(?:SEND_FILE):([^>]+)>', content_str)
+        
+        # Algumas vezes o agente retorna um dict estruturado (não é o padrão do react_agent do langgraph, 
+        # mas podemos ter componentes que injetam isso). No React Agent padrão, o 'content' é string.
+        # Se for string com a tag, tentamos o envio proativo.
+        if file_match:
+            filename = file_match.group(1).strip()
+            full_path = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
+            
+            if os.path.exists(full_path):
+                logger.info(f"[Supervisor] 📦 DETECTADA TAG DE ARQUIVO. Tentando entrega proativa: {filename}")
+                from src.router.adapters.telegram import safe_send_file
+                # Nota: precisamos do 'update' original ou chat_id. 
+                # O state['messages'] geralmente não tem o objeto update do telegram.
+                # No nosso message_handler, nós passamos o chat_id no SystemMessage de contexto se necessário.
+                # Mas para simplificar aqui e garantir que funcione, o safe_send_file precisa do chat_id.
+                
+                # Buscamos o chat_id no estado
+                chat_id = state.get("user_id") # No Telegram Adapter, user_id costuma ser o chat_id
+                if chat_id:
+                    # Rodar sem dar await no node principal pode ser arriscado, 
+                    # mas o safe_send_file já é async.
+                    await asyncio.create_task(safe_send_file(full_path, chat_id))
+                    logger.info(f"[Supervisor] Chamada de entrega proativa disparada para {chat_id}")
 
     if routing_result.next_agent == "FINISH":
         messages = list(state.get("messages", []))

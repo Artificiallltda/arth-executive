@@ -5,7 +5,8 @@ import uuid
 import logging
 import unicodedata
 import asyncio
-import unicodedata
+from typing import Any
+from datetime import datetime
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -109,42 +110,98 @@ def _parse_markdown_to_docx(doc: Document, content: str):
 
 
 @tool
-async def generate_docx(title: str, content: str) -> str:
-    """Cria um documento Word (.docx) com design executivo profissional."""
+async def generate_docx(params: Any) -> str:
+    """Gera DOCX com tratamento robusto e formatação melhorada."""
     try:
-        filename = f"{uuid.uuid4().hex[:6]}-{_safe_filename(title)}.docx"
-        filepath = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
-
-        doc = Document()
-        _set_margins(doc, margin_in=1.0)
-
-        # Título principal — centralizado, azul, grande
-        title_h = doc.add_heading(title, 0)
-        title_h.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        title_h.paragraph_format.space_after = Pt(6)
-        if title_h.runs:
-            title_h.runs[0].font.color.rgb = _AZUL_CORP
-            title_h.runs[0].font.size      = Pt(22)
-            title_h.runs[0].font.name      = "Calibri"
-
-        # Linha decorativa abaixo do título
-        sep = doc.add_paragraph()
-        sep.paragraph_format.space_after = Pt(18)
-        r = sep.add_run("─" * 78)
-        r.font.color.rgb = _AZUL_CORP
-        r.font.size      = Pt(8)
-
-        _parse_markdown_to_docx(doc, content)
-
-        # Usar thread isolada para I/O bloqueante (salvar no disco) para não trancar o loop do LangGraph
-        await asyncio.to_thread(doc.save, filepath)
+        # ==================================================================
+        # NORMALIZAÇÃO DE PARÂMETROS
+        # ==================================================================
+        if isinstance(params, str):
+            title = "Documento"
+            content = params
+            filename = f"documento_{int(datetime.now().timestamp())}.docx"
+        elif isinstance(params, dict):
+            title = params.get('title', params.get('titulo', 'Documento'))
+            content = params.get('content', params.get('conteudo', ''))
+            filename = params.get('filename', f"documento_{int(datetime.now().timestamp())}.docx")
+        elif isinstance(params, list):
+            title = "Documento"
+            content = "\n\n".join([str(item) for item in params])
+            filename = f"documento_{int(datetime.now().timestamp())}.docx"
+        else:
+            title = "Documento"
+            content = str(params)
+            filename = f"documento_{int(datetime.now().timestamp())}.docx"
         
-        exists = os.path.exists(filepath)
-        logger.info(f"[DOCX] Salvo: {filepath} | exists={exists} | size={os.path.getsize(filepath) if exists else 0}B")
-        return f"Documento Word executivo gerado com sucesso: <SEND_FILE:{filename}>"
+        # Garante diretório de saída
+        output_dir = settings.DATA_OUTPUTS_PATH
+        os.makedirs(output_dir, exist_ok=True)
+        filepath = os.path.join(output_dir, filename)
+        
+        logger.info(f"[DOCXGen] Gerando DOCX: {filepath}")
+        
+        # ==================================================================
+        # FUNÇÃO SÍNCRONA PARA RODAR EM THREAD SEPARADA
+        # ==================================================================
+        def _generate():
+            doc = Document()
+            
+            # Configura margens
+            sections = doc.sections
+            for section in sections:
+                section.top_margin = Inches(1)
+                section.bottom_margin = Inches(1)
+                section.left_margin = Inches(1)
+                section.right_margin = Inches(1)
+            
+            # TÍTULO PRINCIPAL
+            title_para = doc.add_heading(title, level=0)
+            title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            # DATA
+            date_para = doc.add_paragraph(f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+            date_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            
+            # LINHA HORIZONTAL
+            doc.add_paragraph('_' * 50)
+            
+            # CONTEÚDO
+            if isinstance(content, str):
+                paragraphs = content.split('\n')
+                for para in paragraphs:
+                    if para.strip():
+                        p = doc.add_paragraph()
+                        p.add_run(para.strip())
+                        p.paragraph_format.space_after = Pt(12)
+            else:
+                p = doc.add_paragraph()
+                p.add_run(str(content))
+                p.paragraph_format.space_after = Pt(12)
+            
+            # RODAPÉ
+            doc.add_paragraph('_' * 50)
+            footer = doc.add_paragraph("Documento gerado pelo Arth Executive")
+            footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            footer.paragraph_format.space_before = Pt(12)
+            
+            doc.save(filepath)
+            return filepath
+        
+        # Executa em thread separada
+        filepath = await asyncio.to_thread(_generate)
+        
+        # Verifica resultado
+        if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+            size_bytes = os.path.getsize(filepath)
+            logger.info(f"[DOCXGen] ✅ DOCX gerado: {filepath} ({size_bytes} bytes)")
+            return f"Documento Word gerado com sucesso: <SEND_FILE:{os.path.basename(filepath)}>"
+        else:
+            logger.error(f"[DOCXGen] ❌ Arquivo não foi criado")
+            return "Falha ao gerar DOCX: Arquivo não foi criado."
+            
     except Exception as e:
-        logger.error(f"[DOCX] Erro: {e}", exc_info=True)
-        return f"Falha ao gerar DOCX: {str(e)}"
+        logger.error(f"[DOCXGen] ❌ Erro: {str(e)}")
+        return f"Erro ao gerar DOCX: {str(e)}"
 
 
 # ─── PDF ─────────────────────────────────────────────────────────────────────

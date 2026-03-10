@@ -13,6 +13,7 @@ from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from src.config import settings
+from typing import Any, Union
 
 logger = logging.getLogger(__name__)
 
@@ -169,32 +170,107 @@ def _build_content(prs, title, bullets, img_path=None):
 
 
 @tool
-async def generate_pptx(slides_content_json: str) -> str:
-    """Gera apresentação executiva premium com design Manus AI (Navy + Cobalt Blue, Calibri)."""
+async def generate_pptx(slides_content_json: Any) -> str:
+    """
+    Gera apresentação executiva premium com design Manus AI (Navy + Cobalt Blue, Calibri).
+    Aceita string JSON, Dict (ideal) com 'presentation_title' e 'slides', ou Lista de strings.
+    """
     try:
         filename = f"Exec-Deck-{uuid.uuid4().hex[:6]}.pptx"
         filepath = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
 
-        content = json.loads(slides_content_json)
+        # ==================================================================
+        # NORMALIZAÇÃO DE PARÂMETROS
+        # ==================================================================
+        prs_title = "EXECUTIVE DECK"
+        prs_subtitle = ""
+        slides_data = []
+
+        if isinstance(slides_content_json, str):
+            try:
+                slides_content_json = json.loads(slides_content_json)
+            except Exception:
+                slides_data = [{"title": "Informação", "bullets": [s.strip() for s in slides_content_json.split('\n') if s.strip()]}]
+                
+        if isinstance(slides_content_json, list):
+            logger.info(f"[PPTXGen] Recebido LISTA com {len(slides_content_json)} itens. Convertendo...")
+            prs_title = "Relatório Executivo Automático"
+            for item in slides_content_json[:15]:
+                if isinstance(item, dict):
+                    slides_data.append({
+                        "title": str(item.get("title", "Aspecto Identificado")),
+                        "bullets": [str(item.get("content", item))]
+                    })
+                else:
+                    slides_data.append({"title": "Ponto Chave", "bullets": [str(item)]})
+
+        elif isinstance(slides_content_json, dict):
+            logger.info(f"[PPTXGen] Recebido DICT com chaves: {list(slides_content_json.keys())}")
+            prs_title = slides_content_json.get("presentation_title", slides_content_json.get("title", "Apresentação Estratégica"))
+            prs_subtitle = slides_content_json.get("subtitle", "")
+            
+            raw_slides = slides_content_json.get("slides", slides_content_json.get("content", []))
+            if isinstance(raw_slides, list):
+                for s in raw_slides:
+                    if isinstance(s, dict):
+                        slides_data.append(s)
+                    else:
+                        slides_data.append({"title": "Ponto Analítico", "bullets": [str(s)]})
+            elif isinstance(raw_slides, str):
+                slides_data.append({"title": "Resumo", "bullets": [raw_slides]})
+                
+        if not slides_data:
+            slides_data = [{"title": "Sem Dados Estruturados", "bullets": ["O agente não enviou informações estruturadas adequadas."]}]
+
+        # ==================================================================
+        # GERAÇÃO PREMIUM (REMASTERIZADA)
+        # ==================================================================
         prs = Presentation()
         prs.slide_width = _W
         prs.slide_height = _H
 
-        # Slide de capa
-        _build_cover(
-            prs,
-            title=content.get("presentation_title", "EXECUTIVE DECK"),
-            subtitle=content.get("subtitle", "")
-        )
-
+        # Slide 1: TÍTULO (DESIGN MELHORADO)
+        slide_layout = prs.slide_layouts[0]
+        slide = prs.slides.add_slide(slide_layout)
+        title_shape = slide.shapes.title
+        subtitle_shape = slide.placeholders[1]
+        
+        title_shape.text = str(prs_title)[:100]
+        title_shape.text_frame.paragraphs[0].font.size = Pt(44)
+        title_shape.text_frame.paragraphs[0].font.bold = True
+        title_shape.text_frame.paragraphs[0].font.color.rgb = RGBColor(0, 51, 102) # Navy Blue
+        
+        subtitle_shape.text = "Arth Executive - Gerado automaticamente"
+        subtitle_shape.text_frame.paragraphs[0].font.size = Pt(24)
+        subtitle_shape.text_frame.paragraphs[0].font.color.rgb = RGBColor(128, 128, 128)
+        
         # Slides de conteúdo
-        for s_data in content.get("slides", []):
-            _build_content(
-                prs,
-                title=s_data.get("title", ""),
-                bullets=s_data.get("bullets", []),
-                img_path=s_data.get("image_path")
-            )
+        for i, s_data in enumerate(slides_data):
+            slide_layout = prs.slide_layouts[1]
+            slide = prs.slides.add_slide(slide_layout)
+            title_shape = slide.shapes.title
+            content_shape = slide.placeholders[1]
+            
+            # Título do slide
+            title_text = s_data.get("title", f"Slide {i+1}")
+            title_shape.text = str(title_text)[:60]
+            title_shape.text_frame.paragraphs[0].font.size = Pt(32)
+            title_shape.text_frame.paragraphs[0].font.bold = True
+            title_shape.text_frame.paragraphs[0].font.color.rgb = RGBColor(0, 51, 102)
+
+            # Conteúdo (Bullets) - Join se for lista
+            bullets = s_data.get("bullets", [])
+            if isinstance(bullets, list):
+                content_text = "\n".join([str(b) for b in bullets])
+            else:
+                content_text = str(bullets)
+            
+            content_shape.text = content_text
+            
+            # Ajusta fonte do conteúdo
+            for paragraph in content_shape.text_frame.paragraphs:
+                paragraph.font.size = Pt(20)
+                paragraph.font.name = 'Arial'
 
         await asyncio.to_thread(prs.save, filepath)
         
