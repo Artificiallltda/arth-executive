@@ -116,20 +116,21 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
 
             # Sanitização Final para Telegram HTML
             if channel == "telegram":
-                # Converte negritos para HTML
-                final_response = final_response.replace("**", "<b>")
-                parts = final_response.split("<b>")
-                new_parts = [parts[0]]
-                for i in range(1, len(parts)):
-                    tag = "</b>" if i % 2 != 0 else "<b>"
-                    new_parts.append(tag + parts[i])
-                final_response = "".join(new_parts)
-                if final_response.count("<b>") > final_response.count("</b>"): final_response += "</b>"
+                # Extrai tags de arquivo para restaurá-las intocadas depois do escape HTML
+                file_tags_to_restore = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):[^>]+>', final_response)
                 
-                # Escapa caracteres reservados preservando nossas tags
+                # Escapa os caracteres HTML básicos
                 final_response = final_response.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                final_response = final_response.replace("&lt;b&gt;", "<b>").replace("&lt;/b&gt;", "</b>")
-                final_response = final_response.replace("&lt;i&gt;", "<i>").replace("&lt;/i&gt;", "</i>")
+                
+                # Converte Markdown básico para HTML suportado pelo Telegram
+                final_response = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', final_response)
+                final_response = re.sub(r'\*(.*?)\*', r'<i>\1</i>', final_response)
+                final_response = re.sub(r'_(.*?)_', r'<i>\1</i>', final_response)
+                
+                # Restaura as tags de arquivo/áudio que foram escapadas
+                for tag in file_tags_to_restore:
+                    escaped_tag = tag.replace("<", "&lt;").replace(">", "&gt;")
+                    final_response = final_response.replace(escaped_tag, tag)
 
             return final_response
 
