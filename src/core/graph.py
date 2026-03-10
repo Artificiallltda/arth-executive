@@ -27,7 +27,6 @@ from src.tools.pptx_generator import generate_pptx
 from src.tools.database_tools import audit_supabase_security, audit_database_schema
 from src.tools.audio_generator import generate_audio
 from src.tools.rag_tools import query_knowledge_base, upload_document_to_knowledge_base
-from src.tools.excel_tools import read_excel, create_excel, append_to_excel
 from src.config import settings
 
 logger = logging.getLogger(__name__)
@@ -58,8 +57,7 @@ ALL_TOOLS = [
     execute_python_code, save_memory, search_memory, ask_chefia, 
     generate_image, analyze_data_file, schedule_reminder, 
     generate_pptx, audit_supabase_security, audit_database_schema, 
-    generate_audio, query_knowledge_base, upload_document_to_knowledge_base,
-    read_excel, create_excel, append_to_excel
+    generate_audio, query_knowledge_base, upload_document_to_knowledge_base
 ]
 
 # --- Criação dos Agentes Especialistas ---
@@ -71,7 +69,7 @@ researcher_agent = create_specialist_agent([search_web, read_url, read_document,
 planner_agent = create_specialist_agent([get_current_time, search_memory, save_memory, analyze_data_file], load_persona("planner.md"))
 executor_agent = create_specialist_agent(ALL_TOOLS, load_persona("executor.md")) # Executor tem acesso a tudo
 qa_agent = create_specialist_agent([search_memory, save_memory], load_persona("qa.md"))
-analyst_agent = create_specialist_agent([analyze_data_file, read_excel, create_excel, append_to_excel, read_document, audit_supabase_security, audit_database_schema, search_memory, save_memory], load_persona("analyst.md"))
+analyst_agent = create_specialist_agent([analyze_data_file, read_document, audit_supabase_security, audit_database_schema, search_memory, save_memory], load_persona("analyst.md"))
 
 async def agent_node(state, agent, name):
     messages = list(state.get("messages", []))
@@ -110,34 +108,43 @@ async def agent_node(state, agent, name):
             logger.warning(f"[{name}] content normalização falhou: tipo={original_type}, valor={str(msg.content)[:100]}")
 
     # Garante que tags de arquivo/áudio geradas por ferramentas cheguem ao estado externo.
-    # Escaneia APENAS ToolMessages (resultados das ferramentas desta execução)
+    # Escaneia APENAS ToolMessages (resultados das ferramentas desta execução),
+    # não o histórico de mensagens que pode conter tags de conversas anteriores.
     tool_messages = [m for m in inner_messages if getattr(m, "type", "") == "tool"]
     tool_text = " ".join(str(m.content) for m in tool_messages)
     file_tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):[^>]+>', tool_text)
-    
     if file_tags:
         msg_content = str(msg.content) if not isinstance(msg.content, str) else msg.content
-        # Remove tags duplicadas que já possam estar no conteúdo
         missing = [t for t in file_tags if t not in msg_content]
         if missing:
             msg = msg.model_copy(update={"content": msg_content + "\n" + "\n".join(missing)})
-            logger.info(f"[{name}] Tags injetadas na resposta: {missing}")
 
     # --- BLINDAGEM DE MÍDIAS (08/03/2026) ---
-    # ... (lógica de PPTX mantida) ...
+    # Se houver um PPTX na resposta, removemos tags de imagem individuais (img- ou img_)
+    # para evitar poluição no chat, já que as imagens já estão dentro dos slides.
+    if isinstance(msg.content, str) and ".pptx>" in msg.content:
+        msg_content = msg.content
+        # Regex flexível para img- ou img_ com qualquer extensão comum
+        msg_content = re.sub(r'\n?<SEND_FILE:img[-_][^>]+>\n?', '', msg_content)
+        if msg_content != msg.content:
+            msg = msg.model_copy(update={"content": msg_content.strip()})
+            logger.info(f"[{name}] Tags de imagem redundantes removidas agressivamente devido ao PPTX.")
 
-    # Remove SEND_FILE tags que apontam para arquivos inexistentes
-    # MELHORIA: Aumentamos a tolerância para arquivos recém-criados
+    # Remove SEND_FILE tags que apontam para arquivos inexistentes (previne alucinação de filenames).
     if isinstance(msg.content, str) and "<SEND_FILE:" in msg.content:
         def _check_tag(m):
             tag_filename = m.group(1).strip()
-            # Se o arquivo acabou de ser mencionado em uma ToolMessage, confiamos nela
-            if f"<SEND_FILE:{tag_filename}>" in tool_text:
-                return f"<SEND_FILE:{tag_filename}>"
-                
-            variants = [tag_filename, tag_filename.replace("-", "_"), tag_filename.replace("_", "-")]
+            # Tenta o nome original, e também variações de hífen/underscore
+            variants = [
+                tag_filename,
+                tag_filename.replace("-", "_"),
+                tag_filename.replace("_", "-")
+            ]
+            
             for v in variants:
-                if os.path.exists(os.path.join(settings.DATA_OUTPUTS_PATH, v)):
+                fp = os.path.join(settings.DATA_OUTPUTS_PATH, v)
+                if os.path.exists(fp):
+                    # Se encontrou com uma variante, retorna a tag com o nome real do arquivo
                     return f"<SEND_FILE:{v}>"
             
             logger.warning(f"[{name}] SEND_FILE para arquivo inexistente removido: {tag_filename}")
@@ -156,32 +163,16 @@ async def agent_node(state, agent, name):
 async def researcher_node(state): return await agent_node(state, researcher_agent, "arth_researcher")
 async def planner_node(state): return await agent_node(state, planner_agent, "arth_planner")
 async def executor_node(state): 
-    user_input = next((m.content for m in reversed(state.get("messages", [])) if m.type == "human"), "N/A")
-    logger.info(f"🔨 [Executor] Recebi pedido para gerar arquivo: '{user_input[:100]}...'")
-    
     # Injeção de instrução de sistema FORÇADA para evitar alucinação de arquivos
     new_messages = list(state.get("messages", []))
     new_messages.append(SystemMessage(content=(
         "🚨 INSTRUÇÃO DE SEGURANÇA: O usuário fez uma nova solicitação. "
-        "Você DEVE chamar as ferramentas necessárias (generate_image, generate_pptx, create_excel, etc.) AGORA. "
+        "Você DEVE chamar as ferramentas necessárias (generate_image, generate_pptx, etc.) AGORA. "
         "NUNCA use nomes de arquivos de mensagens anteriores. Cada arquivo DEVE ser novo."
     )))
-    result = await agent_node({**state, "messages": new_messages}, executor_agent, "arth_executor")
-    return result
-
+    return await agent_node({**state, "messages": new_messages}, executor_agent, "arth_executor")
 async def qa_node(state): return await agent_node(state, qa_agent, "arth_qa")
-
-async def analyst_node(state): 
-    user_input = next((m.content for m in reversed(state.get("messages", [])) if m.type == "human"), "N/A")
-    logger.info(f"📊 [Analyst] Preparando/Analisando dados para: '{user_input[:100]}...'")
-    
-    new_messages = list(state.get("messages", []))
-    new_messages.append(SystemMessage(content=(
-        "🚨 INSTRUÇÃO DE SEGURANÇA: Se você foi acionado para gerar uma planilha ou analisar dados, "
-        "Você DEVE chamar a ferramenta (ex: create_excel, analyze_data_file) AGORA na sua resposta. "
-        "Não apenas fale sobre os dados, EXECUTE a ferramenta obrigatóriamente."
-    )))
-    return await agent_node({**state, "messages": new_messages}, analyst_agent, "arth_analyst")
+async def analyst_node(state): return await agent_node(state, analyst_agent, "arth_analyst")
 
 # --- Orquestrador (Supervisor) ---
 members = ["arth_researcher", "arth_planner", "arth_executor", "arth_qa", "arth_analyst"]
@@ -222,46 +213,11 @@ async def supervisor_node(state: AgentState):
         logger.warning(f"[Supervisor] Loop detectado {repeat_info}. Forçando FINISH.")
         return {"next_agent": "FINISH"}
 
-    # --- ROTEAMENTO POR PALAVRAS-CHAVE (Apenas para checagem final) ---
-    user_input = next((m.content for m in reversed(messages) if m.type == "human"), "").lower()
-    already_has_file = any("<SEND_FILE:" in str(m.content) for m in msgs_this_turn)
-    
-    file_keywords = ["excel", "planilha", "xlsx", "csv", "pptx", "powerpoint", "slides", "docx", "word", "pdf", "imagem", "gera", "cria", "faz"]
-    needs_file = any(kw in user_input for kw in file_keywords)
-
-    # Deixa o LLM do Orquestrador decidir a rota natural primeiro
     routing_result = await supervisor_chain.ainvoke(state)
     logger.info(f"[ROUTER] Para: {routing_result.next_agent}")
 
-    # BLOQUEIO DE FINISH SEM ARQUIVO
-    if routing_result.next_agent == "FINISH" or routing_result.next_agent is None:
-        if needs_file and not already_has_file:
-            logger.warning(f"[Supervisor] Bloqueio de FINISH precoce. Usuário pediu arquivo e não foi entregue.")
-            
-            # Se for pedido de planilha
-            excel_keywords = ["excel", "planilha", "xlsx", "csv"]
-            if any(kw in user_input for kw in excel_keywords):
-                # Se o Analista ainda não foi 2 vezes, insiste nele
-                if specialist_runs.get("arth_analyst", 0) < 2:
-                    logger.warning("[Supervisor] Forçando Analista (Retry) para gerar Planilha.")
-                    return {"next_agent": "arth_analyst"}
-                # Se o Analista falhou 2 vezes, tenta o Executor
-                if specialist_runs.get("arth_executor", 0) < 1:
-                    logger.warning("[Supervisor] Analista falhou. Tentando Executor como contingência para Excel.")
-                    return {"next_agent": "arth_executor"}
-            
-            # Se for outro arquivo e o executor ainda não foi 2 vezes
-            if specialist_runs.get("arth_executor", 0) < 2:
-                logger.warning("[Supervisor] Forçando Executor (Retry) para gerar arquivo.")
-                return {"next_agent": "arth_executor"}
-
-            logger.error("[Supervisor] Falha crítica: Analista e Executor falharam após retries. Finalizando com erro.")
-            return {
-                "next_agent": "FINISH",
-                "messages": [AIMessage(content="Peço desculpas, mas encontrei uma falha técnica persistente ao tentar gerar seu arquivo. Por favor, tente novamente em alguns instantes.", name="arth_orchestrator")]
-            }
-
     if routing_result.next_agent == "FINISH":
+        messages = list(state.get("messages", []))
         last_human_idx = max((i for i, m in enumerate(messages) if m.type == "human"), default=0)
         msgs_this_turn = messages[last_human_idx + 1:]
         
