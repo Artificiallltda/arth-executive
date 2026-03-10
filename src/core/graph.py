@@ -28,6 +28,7 @@ from src.tools.database_tools import audit_supabase_security, audit_database_sch
 from src.tools.audio_generator import generate_audio
 from src.tools.rag_tools import query_knowledge_base, upload_document_to_knowledge_base
 from src.tools.excel_tools import create_excel, append_to_excel, read_excel
+from src.core.capabilities import can_agent_generate, get_agent_for_file_type
 from src.config import settings
 
 logger = logging.getLogger(__name__)
@@ -198,6 +199,41 @@ prompt = ChatPromptTemplate.from_messages([
 
 supervisor_chain = prompt | llm_with_fallbacks.with_structured_output(RouteResponse)
 
+# ANTES de qualquer decisão de roteamento
+def validate_agent_choice(agent_name: str, state: dict) -> str:
+    """Valida se o agente escolhido pode realmente fazer o que foi pedido."""
+    messages = list(state.get("messages", []))
+    last_human_idx = max((i for i, m in enumerate(messages) if m.type == "human"), default=0)
+    user_input = messages[last_human_idx].content.lower() if messages else ""
+    
+    # Detecta tipo de arquivo solicitado
+    file_types = []
+    if any(kw in user_input for kw in ["pdf", "documento"]):
+        file_types.append("pdf")
+    if any(kw in user_input for kw in ["docx", "word"]):
+        file_types.append("docx")
+    if any(kw in user_input for kw in ["pptx", "ppt", "apresentação", "slide"]):
+        file_types.append("pptx")
+    if any(kw in user_input for kw in ["excel", "planilha", "xlsx"]):
+        file_types.append("excel")
+    if any(kw in user_input for kw in ["imagem", "foto", "desenhe"]):
+        file_types.append("image")
+    
+    if not file_types or agent_name == "FINISH":
+        return agent_name  # sem arquivo ou terminando, pode seguir
+    
+    # Para cada tipo, verifica se o agente pode gerar
+    for ft in file_types:
+        if not can_agent_generate(agent_name, ft):
+            correct_agent = get_agent_for_file_type(ft)
+            logger.warning(
+                f"[Supervisor] {agent_name} NÃO pode gerar {ft.upper()}. "
+                f"Redirecionando estruturalmente para {correct_agent}"
+            )
+            return correct_agent
+    
+    return agent_name
+
 async def supervisor_node(state: AgentState):
     messages = list(state.get("messages", []))
 
@@ -222,20 +258,30 @@ async def supervisor_node(state: AgentState):
 
     routing_result = await supervisor_chain.ainvoke(state)
     logger.info(f"[ROUTER] Decisão LLM: {routing_result.next_agent}")
+    
+    # Estrutural: Valida se a rota faz sentido para a capacidade
+    validated_agent = validate_agent_choice(routing_result.next_agent, state)
+    if validated_agent != routing_result.next_agent:
+        routing_result.next_agent = validated_agent
 
     # --- FORÇAR EXECUTOR SE ARQUIVO AINDA NÃO FOI GERADO (BLINDAGEM CONTRA FINISH PREMATURO) ---
     if routing_result.next_agent == "FINISH" and msgs_this_turn:
         # Pega a requisição original do ser humano neste turno
         human_req = messages[last_human_idx].content.lower()
         needs_file = any(kw in human_req for kw in ["pptx", "apresentação", "slide", "pdf", "docx", "excel", "planilha"])
+        needs_img = any(kw in human_req for kw in ["imagem", "foto", "desenhe", "áudio"])
         
         # Verifica se o analista/executor já obteve sucesso (gerou alguma tag SEND_FILE) neste turno
-        has_file = any(
-            any(tag in str(m.content) for tag in ["<SEND_FILE:", "<SEND_AUDIO:"])
-            for m in msgs_this_turn if getattr(m, "name", "") in members
-        )
-
-        needs_img = any(kw in human_req for kw in ["imagem", "foto", "desenhe", "áudio"])
+        has_file = False
+        generated_file_path = ""
+        for m in msgs_this_turn:
+            if getattr(m, "name", "") in members:
+                content_str = str(m.content)
+                if "<SEND_FILE:" in content_str or "<SEND_AUDIO:" in content_str:
+                    has_file = True
+                    match = re.search(r'<SEND_FILE:([^>]+)>', content_str)
+                    if match:
+                        generated_file_path = match.group(1)
         
         # Se o usuário pediu documento e AINDA não tem arquivo, DEVE ir pro Analyst
         if needs_file and not has_file and specialist_runs.get("arth_analyst", 0) < 1:
@@ -245,6 +291,22 @@ async def supervisor_node(state: AgentState):
         elif needs_img and not has_file and specialist_runs.get("arth_executor", 0) < 1:
             logger.warning("[Supervisor] Override: LLM tentou FINISH mas usuário pediu mídia. Forçando arth_executor.")
             routing_result.next_agent = "arth_executor"
+            
+        # ANTES DE FINISH, VERIFICA ARQUIVO FÍSICO (BLINDAGEM ESTRUTURAL 09/03/2026)
+        if routing_result.next_agent == "FINISH" and (needs_file or needs_img) and generated_file_path:
+            expected_full_path = os.path.join(settings.DATA_OUTPUTS_PATH, generated_file_path)
+            
+            if not os.path.exists(expected_full_path):
+                logger.error(f"[Supervisor] Arquivo FANTASMA! Tag gerada, mas o arquivo {expected_full_path} NÃO EXISTE Fisicamente!")
+                file_ext = os.path.splitext(generated_file_path)[1].replace(".", "")
+                correct_retry_agent = get_agent_for_file_type(file_ext)
+                return {"next_agent": correct_retry_agent} # Retenta no agente correto
+                
+            if os.path.getsize(expected_full_path) == 0:
+                logger.error(f"[Supervisor] Arquivo VAZIO (0 bytes): {expected_full_path}!")
+                file_ext = os.path.splitext(generated_file_path)[1].replace(".", "")
+                correct_retry_agent = get_agent_for_file_type(file_ext)
+                return {"next_agent": correct_retry_agent}
 
     if routing_result.next_agent == "FINISH":
         messages = list(state.get("messages", []))

@@ -49,22 +49,38 @@ async def download_telegram_file(file_id: str, dest_filename: str) -> str:
             return dest_path
     return None
 
-async def send_telegram_document(chat_id: str, file_path: str):
+async def safe_send_file(chat_id: str, file_path: str, caption: str = ""):
+    """Envia arquivo apenas se existir e não estiver vazio."""
     if not settings.TELEGRAM_BOT_TOKEN:
-        return
-    if not os.path.exists(file_path):
-        logger.error(f"Documento n\u00e3o encontrado para envio: {file_path}")
-        return
+        return False
+        
+    if not file_path or not os.path.exists(file_path):
+        logger.error(f"[Telegram] Tentativa de enviar arquivo inexistente: {file_path}")
+        await send_telegram_message(chat_id, "❌ O arquivo solicitado não pôde ser gerado (falha do gerador). Tente novamente.")
+        return False
+    
+    if os.path.getsize(file_path) == 0:
+        logger.error(f"[Telegram] Arquivo VAZIO barrado no adapter: {file_path}")
+        await send_telegram_message(chat_id, "❌ O sistema tentou gerar o arquivo, mas ele está vazio (0 bytes). Tente novamente.")
+        return False
         
     url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendDocument"
     async with httpx.AsyncClient() as client:
         try:
             with open(file_path, "rb") as f:
                 files = {"document": (os.path.basename(file_path), f)}
-                data = {"chat_id": chat_id}
-                await client.post(url, data=data, files=files, timeout=30.0)
+                data = {"chat_id": chat_id, "caption": caption}
+                resp = await client.post(url, data=data, files=files, timeout=30.0)
+                if resp.status_code == 200:
+                    logger.info(f"[Telegram] Arquivo enviado: {file_path} ({os.path.getsize(file_path)} bytes)")
+                    return True
+                else:
+                    logger.error(f"[Telegram] Erro API: {resp.text}")
+                    return False
         except Exception as e:
-            logger.error(f"Falha ao enviar documento Telegram API: {e}")
+            logger.error(f"[Telegram] Erro no envio de documento: {str(e)}")
+            await send_telegram_message(chat_id, f"❌ Erro ao enviar arquivo para o Telegram: {str(e)[:100]}")
+            return False
 
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
 
@@ -105,7 +121,7 @@ async def process_telegram_reply(chat_id: str, ai_response: str):
         if ext in IMAGE_EXTENSIONS:
             await send_telegram_photo(chat_id, full_path)
         else:
-            await send_telegram_document(chat_id, full_path)
+            await safe_send_file(chat_id, full_path)
 
     for audio_name in audio_matches:
         full_path = os.path.join(settings.DATA_OUTPUTS_PATH, audio_name.strip())

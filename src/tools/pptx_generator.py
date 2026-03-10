@@ -196,7 +196,9 @@ async def generate_pptx(slides_content_json: str) -> str:
             )
 
         prs.save(filepath)
-        logger.info(f"[PPTX] Apresentação salva: {filename}")
+        exists = os.path.exists(filepath)
+        size_bytes = os.path.getsize(filepath) if exists else 0
+        logger.info(f"[PPTX] Apresentação salva: {filepath} | exists={exists} | size={size_bytes}B")
         return f"Apresentação Executiva gerada: <SEND_FILE:{filename}>"
     except Exception as e:
         logger.error(f"[PPTX] Erro: {e}", exc_info=True)
