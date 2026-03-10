@@ -27,6 +27,7 @@ from src.tools.pptx_generator import generate_pptx
 from src.tools.database_tools import audit_supabase_security, audit_database_schema
 from src.tools.audio_generator import generate_audio
 from src.tools.rag_tools import query_knowledge_base, upload_document_to_knowledge_base
+from src.tools.excel_tools import create_excel, append_to_excel, read_excel
 from src.config import settings
 
 logger = logging.getLogger(__name__)
@@ -57,19 +58,20 @@ ALL_TOOLS = [
     execute_python_code, save_memory, search_memory, ask_chefia, 
     generate_image, analyze_data_file, schedule_reminder, 
     generate_pptx, audit_supabase_security, audit_database_schema, 
-    generate_audio, query_knowledge_base, upload_document_to_knowledge_base
+    generate_audio, query_knowledge_base, upload_document_to_knowledge_base,
+    create_excel, append_to_excel, read_excel
 ]
 
 # --- Criação dos Agentes Especialistas ---
-# NOVO: Forçamos o uso do loop de ferramenta assíncrono
+# NOVO: Reduzimos a carga cognitiva dividindo as ferramentas
 def create_specialist_agent(tools, system_prompt: str):
     return create_react_agent(model=llm_with_fallbacks, tools=tools, prompt=system_prompt)
 
 researcher_agent = create_specialist_agent([search_web, read_url, read_document, search_memory, save_memory, query_knowledge_base], load_persona("researcher.md"))
-planner_agent = create_specialist_agent([get_current_time, search_memory, save_memory, analyze_data_file], load_persona("planner.md"))
-executor_agent = create_specialist_agent(ALL_TOOLS, load_persona("executor.md")) # Executor tem acesso a tudo
+planner_agent = create_specialist_agent([get_current_time, search_memory, save_memory, schedule_reminder], load_persona("planner.md"))
+executor_agent = create_specialist_agent([get_current_time, execute_python_code, save_memory, search_memory, ask_chefia, generate_image, generate_audio, upload_document_to_knowledge_base], load_persona("executor.md")) # Apenas Mídias e Scripts
 qa_agent = create_specialist_agent([search_memory, save_memory], load_persona("qa.md"))
-analyst_agent = create_specialist_agent([analyze_data_file, read_document, audit_supabase_security, audit_database_schema, search_memory, save_memory], load_persona("analyst.md"))
+analyst_agent = create_specialist_agent([analyze_data_file, read_document, create_excel, append_to_excel, read_excel, generate_pdf, generate_docx, generate_pptx, audit_supabase_security, audit_database_schema, search_memory, save_memory], load_persona("analyst.md")) # Documentos e Excel
 
 async def agent_node(state, agent, name):
     messages = list(state.get("messages", []))
@@ -163,16 +165,21 @@ async def agent_node(state, agent, name):
 async def researcher_node(state): return await agent_node(state, researcher_agent, "arth_researcher")
 async def planner_node(state): return await agent_node(state, planner_agent, "arth_planner")
 async def executor_node(state): 
-    # Injeção de instrução de sistema FORÇADA para evitar alucinação de arquivos
     new_messages = list(state.get("messages", []))
     new_messages.append(SystemMessage(content=(
-        "🚨 INSTRUÇÃO DE SEGURANÇA: O usuário fez uma nova solicitação de arquivo. "
-        "Você DEVE chamar as ferramentas (generate_image, generate_pdf, generate_docx, generate_pptx, create_excel) AGORA ANTES de ditar a resposta final. "
-        "NUNCA crie (alucine) tags <SEND_FILE:> da sua cabeça. Você só pode repassar as tags que as ferramentas te devolverem."
+        "🚨 INSTRUÇÃO DE SEGURANÇA: NUNCA crie (alucine) tags <SEND_FILE:> da sua cabeça. "
+        "Você DEVE chamar as ferramentas (generate_image, generate_audio) ANTES de ditar a resposta final."
     )))
     return await agent_node({**state, "messages": new_messages}, executor_agent, "arth_executor")
 async def qa_node(state): return await agent_node(state, qa_agent, "arth_qa")
-async def analyst_node(state): return await agent_node(state, analyst_agent, "arth_analyst")
+async def analyst_node(state): 
+    new_messages = list(state.get("messages", []))
+    new_messages.append(SystemMessage(content=(
+        "🚨 INSTRUÇÃO DE SEGURANÇA: O usuário fez uma nova solicitação de documento ou planilha. "
+        "Você DEVE chamar as ferramentas (generate_pdf, generate_docx, generate_pptx, create_excel) AGORA ANTES de ditar a resposta final. "
+        "NUNCA crie (alucine) tags <SEND_FILE:> da sua cabeça. Você só pode repassar as tags que as ferramentas te devolverem."
+    )))
+    return await agent_node({**state, "messages": new_messages}, analyst_agent, "arth_analyst")
 
 # --- Orquestrador (Supervisor) ---
 members = ["arth_researcher", "arth_planner", "arth_executor", "arth_qa", "arth_analyst"]
@@ -222,15 +229,21 @@ async def supervisor_node(state: AgentState):
         human_req = messages[last_human_idx].content.lower()
         needs_file = any(kw in human_req for kw in ["pptx", "apresentação", "slide", "pdf", "docx", "excel", "planilha"])
         
-        # Verifica se o executor já obteve sucesso (gerou alguma tag SEND_FILE) neste turno
+        # Verifica se o analista/executor já obteve sucesso (gerou alguma tag SEND_FILE) neste turno
         has_file = any(
             any(tag in str(m.content) for tag in ["<SEND_FILE:", "<SEND_AUDIO:"])
             for m in msgs_this_turn if getattr(m, "name", "") in members
         )
 
-        # Se o usuário pediu documento e AINDA não tem arquivo, DEVE ir pro Executor
-        if needs_file and not has_file and specialist_runs.get("arth_executor", 0) < 1:
-            logger.warning("[Supervisor] Override: LLM tentou FINISH mas usuário pediu documento/pptx. Forçando arth_executor.")
+        needs_img = any(kw in human_req for kw in ["imagem", "foto", "desenhe", "áudio"])
+        
+        # Se o usuário pediu documento e AINDA não tem arquivo, DEVE ir pro Analyst
+        if needs_file and not has_file and specialist_runs.get("arth_analyst", 0) < 1:
+            logger.warning("[Supervisor] Override: LLM tentou FINISH mas usuário pediu documento/pptx. Forçando arth_analyst.")
+            routing_result.next_agent = "arth_analyst"
+        # Se pediu imagem/áudio e não tem arquivo, vai pro Executor
+        elif needs_img and not has_file and specialist_runs.get("arth_executor", 0) < 1:
+            logger.warning("[Supervisor] Override: LLM tentou FINISH mas usuário pediu mídia. Forçando arth_executor.")
             routing_result.next_agent = "arth_executor"
 
     if routing_result.next_agent == "FINISH":
