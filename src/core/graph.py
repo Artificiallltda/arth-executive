@@ -278,7 +278,7 @@ prompt = ChatPromptTemplate.from_messages([
     ("system", "Quem deve atuar agora? Escolha um de: {options}."),
 ]).partial(options=str(options), members=", ".join(members))
 
-supervisor_chain = prompt | llm_with_fallbacks.with_structured_output(RouteResponse)
+supervisor_chain = prompt | supervisor_llm.with_structured_output(RouteResponse)
 
 # ANTES de qualquer decisão de roteamento
 def validate_agent_choice(agent_name: str, state: dict) -> str:
