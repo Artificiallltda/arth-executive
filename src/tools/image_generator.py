@@ -80,79 +80,42 @@ def _run_gemini_25_flash(enhanced_prompt: str) -> tuple[bytes, str]:
     return _extract_image_bytes(response)
 
 
-def _run_dalle3_image(prompt: str) -> tuple[bytes, str]:
-    from openai import OpenAI
-    import httpx
-    
-    client = OpenAI(api_key=settings.OPENAI_API_KEY)
-    response = client.images.generate(
-        model="dall-e-3",
-        prompt=prompt,
-        size="1024x1024",
-        quality="standard",
-        n=1,
-    )
-    image_url = response.data[0].url
-    
-    # Baixar a imagem da URL
-    resp = httpx.get(image_url, timeout=_TIMEOUT_S)
-    if resp.status_code != 200:
-        raise ValueError(f"Falha ao baixar imagem do DALL-E: Status {resp.status_code}")
-        
-    return resp.content, "image/png"
-
 @tool
 async def generate_image(prompt: str, orientation: Optional[str] = "square") -> str:
     """
-    Gera imagem profissional via AI.
+    Gera imagem profissional via Gemini (Google).
     Primary: gemini-3.1-flash-image-preview.
-    Fallback 1: gemini-2.5-flash.
-    Fallback 2: dall-e-3 (OpenAI)
+    Fallback: gemini-2.5-flash.
+    orientation: 'square' (1:1), 'vertical' (9:16), 'horizontal' (16:9)
     """
+    if not settings.GEMINI_API_KEY:
+        return "Erro: GEMINI_API_KEY não configurada no ambiente."
+
     enhanced_prompt = _build_prompt(prompt)
-    model_used = None
-    image_bytes = None
-    mime = "image/png"
 
     # --- Tentativa 1: gemini-3.1-flash-image-preview ---
-    if settings.GEMINI_API_KEY:
+    try:
+        logger.info(f"[ImageGen] Tentando gemini-3.1-flash-image-preview | {enhanced_prompt[:80]}...")
+        image_bytes, mime = await asyncio.wait_for(
+            asyncio.to_thread(_run_flash_image, enhanced_prompt),
+            timeout=_TIMEOUT_S + 5,
+        )
+        model_used = "gemini-3.1-flash-image-preview"
+        logger.info(f"[ImageGen] flash-image-preview OK: {len(image_bytes):,} bytes, mime={mime}")
+    except Exception as e1:
+        logger.warning(f"[ImageGen] flash-image-preview falhou ({type(e1).__name__}: {e1}). Tentando gemini-2.5-flash...")
+
+        # --- Fallback: gemini-2.5-flash ---
         try:
-            logger.info(f"[ImageGen] Tentando gemini-3.1-flash-image-preview | {enhanced_prompt[:80]}...")
             image_bytes, mime = await asyncio.wait_for(
-                asyncio.to_thread(_run_flash_image, enhanced_prompt),
+                asyncio.to_thread(_run_gemini_25_flash, enhanced_prompt),
                 timeout=_TIMEOUT_S + 5,
             )
-            model_used = "gemini-3.1-flash-image-preview"
-            logger.info(f"[ImageGen] flash-image-preview OK")
-        except Exception as e1:
-            logger.warning(f"[ImageGen] flash-image-preview falhou ({type(e1).__name__}: {e1}). Tentando gemini-2.5-flash...")
-            # --- Fallback 1: gemini-2.5-flash ---
-            try:
-                image_bytes, mime = await asyncio.wait_for(
-                    asyncio.to_thread(_run_gemini_25_flash, enhanced_prompt),
-                    timeout=_TIMEOUT_S + 5,
-                )
-                model_used = "gemini-2.5-flash"
-                logger.info(f"[ImageGen] gemini-2.5-flash OK")
-            except Exception as e2:
-                logger.warning(f"[ImageGen] Gemini falhou ({type(e2).__name__}: {e2}). Tentando OpenAI DALL-E 3...")
-
-    # --- Fallback 2: OpenAI DALL-E 3 ---
-    if not image_bytes and settings.OPENAI_API_KEY:
-        try:
-            logger.info(f"[ImageGen] Tentando DALL-E 3...")
-            image_bytes, mime = await asyncio.wait_for(
-                asyncio.to_thread(_run_dalle3_image, enhanced_prompt),
-                timeout=_TIMEOUT_S + 15,
-            )
-            model_used = "dall-e-3"
-            logger.info(f"[ImageGen] dall-e-3 OK")
-        except Exception as e3:
-            logger.error(f"[ImageGen] DALL-E 3 falhou: {e3}")
-            return f"Erro Crítico na geração de imagem. Limites de Quota excedidos em todas as APIs. {e3}"
-
-    if not image_bytes:
-        return "Erro: Nenhuma API configurada ou disponível (Gemini/OpenAI) possuía quota para gerar a imagem."
+            model_used = "gemini-2.5-flash"
+            logger.info(f"[ImageGen] gemini-2.5-flash OK: {len(image_bytes):,} bytes, mime={mime}")
+        except Exception as e2:
+            logger.error(f"[ImageGen] Ambos falharam. flash-image: {type(e1).__name__}:{e1} | 2.5-flash: {type(e2).__name__}:{e2}")
+            return f"Erro na geração de imagem. flash-image-preview: {e1} | gemini-2.5-flash: {e2}"
 
     ext = _ext_from_mime(mime)
     filename = f"img-{uuid.uuid4().hex[:8]}.{ext}"
