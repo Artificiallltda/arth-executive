@@ -384,35 +384,35 @@ async def supervisor_node(state: AgentState):
                 correct_retry_agent = get_agent_for_file_type(file_ext)
                 return {"next_agent": correct_retry_agent}
 
-    # --- SUPORTE A ENTREGA PROATIVA BLINDADA (09/03/2026) ---
+    # --- SUPORTE A ENTREGA PROATIVA BLINDADA (ESCANER TOTAL DE TURNO) ---
     if routing_result.next_agent == "FINISH":
-        last_msg = messages[-1] if messages else None
-        if last_msg and last_msg.name in members:
-            content_str = str(last_msg.content)
-            # Regex robusta: captura qualquer tag SEND_FILE ou SEND_AUDIO
-            file_tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):([^>]+)>', content_str)
+        from src.router.adapters.telegram import safe_send_file
+        chat_id = state.get("user_id")
+        
+        # Escaneia todas as mensagens desde o último input humano (turno atual)
+        all_tags = []
+        for m in msgs_this_turn:
+            content_str = str(m.content)
+            tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):([^>]+)>', content_str)
+            all_tags.extend(tags)
+        
+        # Remove duplicatas preservando a ordem
+        unique_tags = list(dict.fromkeys(all_tags))
+        
+        if unique_tags and chat_id:
+            logger.info(f"[Supervisor] 📦 DETECTADOS {len(unique_tags)} ARQUIVOS PARA ENTREGA NESTE TURNO.")
+            output_dir = os.path.abspath(settings.DATA_OUTPUTS_PATH)
             
-            if file_tags:
-                from src.router.adapters.telegram import safe_send_file
-                chat_id = state.get("user_id")
+            for filename in unique_tags:
+                filename = filename.strip()
+                full_path = os.path.join(output_dir, filename)
                 
-                for filename in file_tags:
-                    filename = filename.strip()
-                    # Tenta localizar o arquivo de forma absoluta
-                    output_dir = os.path.abspath(settings.DATA_OUTPUTS_PATH)
-                    full_path = os.path.join(output_dir, filename)
-                    
-                    logger.info(f"[Supervisor] 📦 Verificando arquivo para entrega: {filename}")
-                    logger.info(f"[Supervisor] 🔍 Caminho absoluto: {full_path}")
-                    
-                    if os.path.exists(full_path):
-                        if chat_id:
-                            logger.info(f"[Supervisor] 🚀 Disparando entrega proativa de '{filename}' para {chat_id}")
-                            await asyncio.create_task(safe_send_file(full_path, chat_id))
-                        else:
-                            logger.warning(f"[Supervisor] ⚠️ chat_id não encontrado no estado. Não é possível enviar {filename}")
-                    else:
-                        logger.error(f"[Supervisor] ❌ Arquivo FÍSICO não encontrado: {full_path}")
+                if os.path.exists(full_path):
+                    logger.info(f"[Supervisor] 🚀 Disparando entrega de: {filename}")
+                    # Usamos await direto para garantir que o envio ocorra antes da finalização do node
+                    await safe_send_file(full_path, chat_id)
+                else:
+                    logger.error(f"[Supervisor] ❌ Arquivo gerado em tag mas não encontrado no disco: {full_path}")
 
         # Lógica de finalização original...
         last_human_idx = max((i for i, m in enumerate(messages) if m.type == "human"), default=0)

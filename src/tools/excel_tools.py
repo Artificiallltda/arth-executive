@@ -111,7 +111,7 @@ async def create_excel(data: list, file_path: str, sheet_name: str = "Sheet1") -
             await asyncio.to_thread(df.to_excel, full_path, index=False, sheet_name=sheet_name)
             logger.info(f"✅ [ExcelGen] Sucesso via PANDAS: {full_path}")
             size = os.path.getsize(full_path)
-            return f"Planilha '{file_path}' gerada com sucesso ({size} bytes).\n<SEND_FILE:{os.path.basename(full_path)}>"
+            return f"Planilha '{file_path}' gerada com sucesso ({size} bytes). <SEND_FILE:{os.path.basename(full_path)}>"
         except Exception as pe:
             logger.warning(f"⚠️ [ExcelGen] Pandas falhou: {pe}. Tentando FALLBACK OpenPyXL...")
             
@@ -129,7 +129,7 @@ async def create_excel(data: list, file_path: str, sheet_name: str = "Sheet1") -
             
             await asyncio.to_thread(wb.save, full_path)
             logger.info(f"✅ [ExcelGen] Sucesso via FALLBACK OpenPyXL: {full_path}")
-            return f"Planilha '{file_path}' criada via fallback seguro com {len(clean_data)} linhas.\n<SEND_FILE:{os.path.basename(full_path)}>"
+            return f"Planilha '{file_path}' criada via fallback seguro com {len(clean_data)} linhas. <SEND_FILE:{os.path.basename(full_path)}>"
             
     except Exception as e:
         logger.error(f"❌ [ExcelGen] Erro crítico ao criar Excel {file_path}: {e}")
@@ -165,7 +165,7 @@ async def append_to_excel(data: list, file_path: str, sheet_name: str = "Sheet1"
         await asyncio.to_thread(combined_df.to_excel, full_path, index=False, sheet_name=sheet_name)
         
         logger.info(f"Dados adicionados ao Excel: {full_path}")
-        return f"Mais {len(clean_data)} linhas adicionadas à planilha '{os.path.basename(full_path)}'.\n<SEND_FILE:{os.path.basename(full_path)}>"
+        return f"Mais {len(clean_data)} linhas adicionadas à planilha '{os.path.basename(full_path)}'. <SEND_FILE:{os.path.basename(full_path)}>"
     except Exception as e:
         logger.error(f"Erro ao atualizar Excel {file_path}: {e}")
         return f"Erro ao atualizar planilha: {str(e)}"

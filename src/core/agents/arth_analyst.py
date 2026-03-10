@@ -47,18 +47,23 @@ async def arth_analyst_processor(state: dict) -> dict:
         if last_ai_msg and len(str(last_ai_msg.content)) > 100:
             rich_content = str(last_ai_msg.content)
             logger.info(f"[Analyst] 📥 Recuperado conteúdo rico das mensagens: {len(rich_content)} chars")
+        else:
+            # NOVO: Se ainda não tem conteúdo, usa o input do usuário para redigir do zero
+            rich_content = f"Documento redigido baseado no pedido: {user_input}"
+            logger.warning(f"[Analyst] ⚠️ Sem pesquisa disponível. Redigindo do zero baseado no input.")
 
     logger.info(f"[Analyst] Conteúdo final para processamento: {len(rich_content)} caracteres")
     
     # ==================================================================
-    # INSTRUÇÕES DE MISSÃO CRÍTICA (REFORÇO ORION)
+    # INSTRUÇÕES DE MISSÃO CRÍTICA (REFORÇO ORION 2.0)
     # ==================================================================
     instruction = (
         "🚨 MISSÃO CRÍTICA: Você é um Especialista em Geração de Documentos Executivos.\n"
-        f"1. ANALISE o conteúdo abaixo ({len(rich_content)} caracteres). VOCÊ DEVE USAR ESSES DADOS PARA GERAR O ARQUIVO.\n"
-        "2. NÃO DIGA que vai gerar o arquivo. GERE O ARQUIVO AGORA usando as ferramentas: generate_pdf, generate_docx, generate_pptx ou create_excel.\n"
-        "3. O argumento 'content' da ferramenta DEVE conter o texto completo e formatado fornecido.\n"
-        "4. SOMENTE finalize a tarefa APÓS receber a confirmação da ferramenta (tag <SEND_FILE:>)."
+        "1. VOCÊ DEVE GERAR O ARQUIVO AGORA. Não peça permissão, não faça perguntas.\n"
+        "2. SE NÃO HOUVER PESQUISA, use seu próprio conhecimento para REDIGIR UM DOCUMENTO COMPLETO E PROFISSIONAL (ex: um contrato real, uma planilha de gastos reais, etc.).\n"
+        "3. CHAME AS FERRAMENTAS: generate_pdf, generate_docx, generate_pptx ou create_excel IMEDIATAMENTE.\n"
+        "4. O argumento 'content' da ferramenta deve conter o TEXTO COMPLETO do documento.\n"
+        "5. Após a ferramenta confirmar o sucesso, finalize sua resposta citando a tag <SEND_FILE:nome_do_arquivo>."
     )
     
     if rich_content:
