@@ -166,13 +166,34 @@ async def agent_node(state, agent, name):
         if cleaned != msg.content:
             msg = msg.model_copy(update={"content": cleaned})
 
-    msg.name = name
+    # --- BLINDAGEM DE ESTADO (ORION + DICA DO USUÁRIO) ---
+    # Garantimos que 'content' e 'user_input' persistam após a execução do agente
+    new_content = str(result.get("content", state.get("content", "")))
+    new_user_input = str(result.get("user_input", state.get("user_input", "")))
+
     return {
         "messages": [msg],
-        "sender": name
+        "sender": name,
+        "content": new_content,
+        "user_input": new_user_input
     }
 
-async def researcher_node(state): return await agent_node(state, researcher_agent, "arth_researcher")
+async def researcher_node(state): 
+    # ==================================================================
+    # REFORÇO NO RESEARCHER PARA PRESERVAR CONTEÚDO (DICA PARTE 1)
+    # ==================================================================
+    result = await agent_node(state, researcher_agent, "arth_researcher")
+    
+    # Se o pesquisador retornou dados no histórico, tenta extrair para a chave 'content'
+    messages = result.get("messages", [])
+    if messages:
+        last_msg = messages[-1]
+        if len(str(last_msg.content)) > 100:
+             logger.info(f"[Researcher] 📦 Detectado conteúdo rico ({len(str(last_msg.content))} chars). Preservando no state.")
+             result["content"] = str(last_msg.content)
+             
+    return result
+
 async def planner_node(state): return await agent_node(state, planner_agent, "arth_planner")
 async def executor_node(state): 
     new_messages = list(state.get("messages", []))
@@ -184,9 +205,15 @@ async def executor_node(state):
 async def qa_node(state): return await agent_node(state, qa_agent, "arth_qa")
 async def analyst_node(state): 
     # ==================================================================
-    # PROCESSADOR DE ESTADO DO ANALISTA (PARTE 3)
-    # Protege contra campos None e injeta instruções de geradores
+    # RECUPERAÇÃO DE CONTEÚDO (DICA PARTE 2)
     # ==================================================================
+    # Injetamos o conteúdo da pesquisa explicitamente no estado se vier do researcher
+    if state.get("sender") == "arth_researcher":
+         research_content = state.get("content", "")
+         if research_content:
+             logger.info(f"[Supervisor] 📦 Passando conteúdo da pesquisa para Analyst: {len(research_content)} chars")
+             state["content"] = research_content
+
     updated_state = await arth_analyst_processor(state)
     return await agent_node(updated_state, analyst_agent, "arth_analyst")
 
@@ -214,6 +241,10 @@ def validate_agent_choice(agent_name: str, state: dict) -> str:
     last_human_idx = max((i for i, m in enumerate(messages) if m.type == "human"), default=0)
     user_input = messages[last_human_idx].content.lower() if messages else ""
     
+    # Detecta intenções
+    search_keywords = ["pesquise", "busque", "google", "internet", "saiba sobre", "procure", "encontre", "analise", "veja sobre", "informações sobre"]
+    needs_search = any(kw in user_input for kw in search_keywords)
+    
     # Detecta tipo de arquivo solicitado
     file_types = []
     if any(kw in user_input for kw in ["pdf", "documento"]):
@@ -224,11 +255,16 @@ def validate_agent_choice(agent_name: str, state: dict) -> str:
         file_types.append("pptx")
     if any(kw in user_input for kw in ["excel", "planilha", "xlsx"]):
         file_types.append("excel")
-    if any(kw in user_input for kw in ["imagem", "foto", "desenhe"]):
-        file_types.append("image")
     
+    # ESTRATÉGIA ORION: Se precisa de pesquisa e o agente escolhido é o researcher,
+    # NÃO redirecione ainda, mesmo que o usuário tenha pedido um arquivo.
+    # A pesquisa deve vir primeiro.
+    if needs_search and agent_name == "arth_researcher":
+        logger.info("[Supervisor] Permitindo arth_researcher para fase de coleta de dados.")
+        return agent_name
+
     if not file_types or agent_name == "FINISH":
-        return agent_name  # sem arquivo ou terminando, pode seguir
+        return agent_name
     
     # Para cada tipo, verifica se o agente pode gerar
     for ft in file_types:
@@ -281,20 +317,28 @@ async def supervisor_node(state: AgentState):
         routing_result.next_agent = validated_agent
 
     # ==================================================================
-    # PROTEÇÃO CONTRA None NO ANALISTA (PARTE 2)
+    # PROTEÇÃO E PASSAGEM DE ESTADO (PARTE 2 - REFORÇO DICA)
     # ==================================================================
     if routing_result.next_agent == "arth_analyst":
         logger.info(f"[Graph] Preparando para chamar arth_analyst")
         
+        # Recupera conteúdo rico de pesquisa se houver
+        research_content = state.get("content", "")
+        if not research_content and len(messages) > 1:
+            # Tenta pegar da última mensagem de IA se o 'content' explícito estiver vazio
+            last_ai = next((m for m in reversed(messages) if m.type == "ai"), None)
+            if last_ai:
+                research_content = str(last_ai.content)
+                logger.info(f"[Supervisor] 📦 Recuperando conteúdo da última mensagem AI para o Analyst: {len(research_content)} chars")
+
         # Garante que content existe no estado para evitar erro Pydantic de None
-        if "content" not in state or state.get("content") is None:
-            state["content"] = ""
+        state["content"] = research_content or ""
         
         # Garante que user_input existe
         if "user_input" not in state or state.get("user_input") is None:
             state["user_input"] = ""
             
-        logger.info(f"[Graph] State preparado para Analyst: content={len(str(state.get('content','')))}, user_input='{state.get('user_input','')[:50]}'")
+        logger.info(f"[Graph] State blindado para Analyst: content={len(str(state.get('content','')))}, user_input='{state.get('user_input','')[:50]}'")
 
     # --- FORÇAR EXECUTOR SE ARQUIVO AINDA NÃO FOI GERADO (BLINDAGEM CONTRA FINISH PREMATURO) ---
     if routing_result.next_agent == "FINISH" and msgs_this_turn:
@@ -394,8 +438,13 @@ async def supervisor_node(state: AgentState):
     # assumirá que a mensagem final já foi gerada e retornará imediatamente.
     # Precisamos injetar uma HumanMessage instrucionando-o a prosseguir.
     if messages and getattr(messages[-1], "type", "") == "ai":
+        prev_agent = getattr(messages[-1], "name", "outro agente")
         handoff_msg = HumanMessage(
-            content=f"O Orquestrador alocou a tarefa para você ({routing_result.next_agent}). Analise o contexto acima e execute o que for necessário para atender o usuário.",
+            content=(
+                f"O Orquestrador alocou a tarefa para você ({routing_result.next_agent}). "
+                f"O agente '{prev_agent}' forneceu as informações acima. "
+                f"Use esses dados para cumprir o pedido original do usuário agora."
+            ),
             name="arth_orchestrator"
         )
         return {"next_agent": routing_result.next_agent, "messages": [handoff_msg]}

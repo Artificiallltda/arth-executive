@@ -96,6 +96,8 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
                 "messages": [HumanMessage(content=text)],
                 "user_id": str(user_id),
                 "channel": channel,
+                "user_input": text,  # Preserva o input original para todos os agentes
+                "content": "",       # Inicializa o content rico
                 "media_context": media_data.get("b64") if media_data else None,
             }
 
