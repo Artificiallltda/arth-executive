@@ -120,11 +120,34 @@ async def agent_node(state, agent, name):
             logger.warning(f"[{name}] content normalização falhou: tipo={original_type}, valor={str(msg.content)[:100]}")
 
     # Garante que tags de arquivo/áudio geradas por ferramentas cheguem ao estado externo.
-    # Escaneia APENAS ToolMessages (resultados das ferramentas desta execução),
-    # não o histórico de mensagens que pode conter tags de conversas anteriores.
     tool_messages = [m for m in inner_messages if getattr(m, "type", "") == "tool"]
     tool_text = " ".join(str(m.content) for m in tool_messages)
     file_tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):[^>]+>', tool_text)
+    
+    # --- ENTREGA IMEDIATA (DICA DO USUÁRIO - CORREÇÃO DEFINITIVA) ---
+    delivered_this_step = []
+    if file_tags:
+        from src.router.adapters.telegram import safe_send_file
+        chat_id = state.get("user_id")
+        already_delivered = state.get("delivered_files", []) or []
+        output_dir = os.path.abspath(settings.DATA_OUTPUTS_PATH)
+        
+        for filename in file_tags:
+            filename = filename.strip()
+            if filename in already_delivered: 
+                logger.info(f"[{name}] Arquivo já enviado anteriormente: {filename}")
+                continue
+            
+            full_path = os.path.join(output_dir, filename)
+            logger.info(f"[{name}] 🚨 ARQUIVO DETECTADO NO RESULTADO: {filename}")
+            
+            if os.path.exists(full_path) and chat_id:
+                logger.info(f"[{name}] 🚀 DISPARANDO ENTREGA IMEDIATA para {chat_id}")
+                await safe_send_file(full_path, chat_id)
+                delivered_this_step.append(filename)
+            else:
+                logger.warning(f"[{name}] ⚠️ Falha na entrega imediata: {filename} (Físico? {os.path.exists(full_path)})")
+
     if file_tags:
         msg_content = str(msg.content) if not isinstance(msg.content, str) else msg.content
         missing = [t for t in file_tags if t not in msg_content]
@@ -132,50 +155,35 @@ async def agent_node(state, agent, name):
             msg = msg.model_copy(update={"content": msg_content + "\n" + "\n".join(missing)})
 
     # --- BLINDAGEM DE MÍDIAS (08/03/2026) ---
-    # Se houver um PPTX na resposta, removemos tags de imagem individuais (img- ou img_)
-    # para evitar poluição no chat, já que as imagens já estão dentro dos slides.
     if isinstance(msg.content, str) and ".pptx>" in msg.content:
         msg_content = msg.content
-        # Regex flexível para img- ou img_ com qualquer extensão comum
         msg_content = re.sub(r'\n?<SEND_FILE:img[-_][^>]+>\n?', '', msg_content)
         if msg_content != msg.content:
             msg = msg.model_copy(update={"content": msg_content.strip()})
-            logger.info(f"[{name}] Tags de imagem redundantes removidas agressivamente devido ao PPTX.")
+            logger.info(f"[{name}] Tags de imagem removidas devido ao PPTX.")
 
-    # Remove SEND_FILE tags que apontam para arquivos inexistentes (previne alucinação de filenames).
+    # Remove tags inválidas
     if isinstance(msg.content, str) and "<SEND_FILE:" in msg.content:
         def _check_tag(m):
             tag_filename = m.group(1).strip()
-            # Tenta o nome original, e também variações de hífen/underscore
-            variants = [
-                tag_filename,
-                tag_filename.replace("-", "_"),
-                tag_filename.replace("_", "-")
-            ]
-            
-            for v in variants:
-                fp = os.path.join(settings.DATA_OUTPUTS_PATH, v)
-                if os.path.exists(fp):
-                    # Se encontrou com uma variante, retorna a tag com o nome real do arquivo
-                    return f"<SEND_FILE:{v}>"
-            
-            logger.warning(f"[{name}] SEND_FILE para arquivo inexistente removido: {tag_filename}")
+            fp = os.path.join(settings.DATA_OUTPUTS_PATH, tag_filename)
+            if os.path.exists(fp): return f"<SEND_FILE:{tag_filename}>"
+            logger.warning(f"[{name}] Tag para arquivo inexistente removida: {tag_filename}")
             return ""
-            
         cleaned = re.sub(r'<SEND_FILE:([^>]+)>', _check_tag, msg.content)
-        if cleaned != msg.content:
-            msg = msg.model_copy(update={"content": cleaned})
+        if cleaned != msg.content: msg = msg.model_copy(update={"content": cleaned})
 
-    # --- BLINDAGEM DE ESTADO (ORION + DICA DO USUÁRIO) ---
-    # Garantimos que 'content' e 'user_input' persistam após a execução do agente
+    # --- BLINDAGEM DE ESTADO DEFINITIVA (ORION + DICA DO USUÁRIO) ---
     new_content = str(result.get("content", state.get("content", "")))
     new_user_input = str(result.get("user_input", state.get("user_input", "")))
+    all_delivered = list(state.get("delivered_files", []) or []) + delivered_this_step
 
     return {
         "messages": [msg],
         "sender": name,
         "content": new_content,
-        "user_input": new_user_input
+        "user_input": new_user_input,
+        "delivered_files": all_delivered
     }
 
 async def researcher_node(state): 
