@@ -239,6 +239,14 @@ class ArthPDF(FPDF):
         date_str = datetime.now().strftime("%d/%m/%Y %H:%M")
         self.cell(0, 10, f"Gerado por Arth Executive em {date_str}  |  Confidencial  |  Página {self.page_no()}", 0, 0, "C")
 
+def _clean_pdf_text(text: str) -> str:
+    """Limpa texto para compatibilidade total com FPDF Latin-1."""
+    if not text: return ""
+    # Substitui caracteres comuns de interrupção
+    text = text.replace('–', '-').replace('—', '-').replace('‘', "'").replace('’', "'").replace('“', '"').replace('”', '"')
+    # Força codificação latin-1 ignorando o que não couber
+    return text.encode("latin-1", errors="replace").decode("latin-1")
+
 @tool(args_schema=PdfSchema)
 async def generate_pdf(title: str, content: str) -> str:
     """Cria um documento PDF Executivo Premium com design Manus AI."""
@@ -264,7 +272,7 @@ async def generate_pdf(title: str, content: str) -> str:
         pdf.set_fill_color(*_AZUL_CORP)
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Helvetica", "B", 20)
-        pdf.cell(0, 15, title.upper(), 0, 1, 'C', fill=True)
+        pdf.cell(0, 15, _clean_pdf_text(title.upper()), 0, 1, 'C', fill=True)
         pdf.ln(10)
 
         # Configurações de largura efetiva
@@ -278,24 +286,26 @@ async def generate_pdf(title: str, content: str) -> str:
                 pdf.ln(4)
                 continue
 
+            clean_line = _clean_pdf_text(stripped)
+
             if stripped.startswith('# ') and not stripped.startswith('## '):
                 pdf.set_font("Helvetica", "B", 16)
                 pdf.set_text_color(*_AZUL_CORP)
-                pdf.multi_cell(eff_w, 10, stripped[2:].replace("**", ""))
+                pdf.multi_cell(eff_w, 10, clean_line[2:].replace("**", ""))
                 pdf.ln(2)
             elif stripped.startswith('## '):
                 pdf.set_font("Helvetica", "B", 14)
                 pdf.set_text_color(*_AZUL_CORP)
-                pdf.multi_cell(eff_w, 9, stripped[3:].replace("**", ""))
+                pdf.multi_cell(eff_w, 9, clean_line[3:].replace("**", ""))
                 pdf.ln(1)
             elif stripped.startswith('- ') or stripped.startswith('* '):
                 pdf.set_font("Helvetica", "", 11)
                 pdf.set_text_color(*_TEXT)
-                pdf.multi_cell(eff_w, 7, f"  • {stripped[2:]}", markdown=True)
+                pdf.multi_cell(eff_w, 7, f"  • {clean_line[2:]}")
             else:
                 pdf.set_font("Helvetica", "", 11)
                 pdf.set_text_color(*_TEXT)
-                pdf.multi_cell(eff_w, 7, stripped, markdown=True)
+                pdf.multi_cell(eff_w, 7, clean_line)
 
         await asyncio.to_thread(pdf.output, filepath)
         

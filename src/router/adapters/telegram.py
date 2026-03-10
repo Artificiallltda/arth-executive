@@ -50,18 +50,28 @@ async def download_telegram_file(file_id: str, dest_filename: str) -> str:
     return None
 
 async def safe_send_file(chat_id: str, file_path: str, caption: str = ""):
-    """Envia arquivo apenas se existir e não estiver vazio."""
+    """Envia arquivo apenas se existir e não estiver vazio, com retry interno blindado."""
     if not settings.TELEGRAM_BOT_TOKEN:
         return False
         
-    if not file_path or not os.path.exists(file_path):
-        logger.error(f"[Telegram] Tentativa de enviar arquivo inexistente: {file_path}")
-        await send_telegram_message(chat_id, "❌ O arquivo solicitado não pôde ser gerado (falha do gerador). Tente novamente.")
+    if not file_path:
+        logger.error("[Telegram] safe_send_file: caminho nulo.")
         return False
-    
-    if os.path.getsize(file_path) == 0:
-        logger.error(f"[Telegram] Arquivo VAZIO barrado no adapter: {file_path}")
-        await send_telegram_message(chat_id, "❌ O sistema tentou gerar o arquivo, mas ele está vazio (0 bytes). Tente novamente.")
+
+    # Verificação de integridade com retry (Orion Wait)
+    file_ready = False
+    for attempt in range(5):
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            logger.info(f"[Telegram] ✅ Arquivo pronto para envio (tentativa {attempt+1}): {file_path} ({os.path.getsize(file_path)} bytes)")
+            file_ready = True
+            break
+        else:
+            logger.warning(f"[Telegram] ⏳ Arquivo não encontrado ou vazio (tentativa {attempt+1}/5). Aguardando disco...")
+            await asyncio.sleep(0.6)
+            
+    if not file_ready:
+        logger.error(f"[Telegram] ❌ Abortando envio: Arquivo não apareceu no disco: {file_path}")
+        await send_telegram_message(chat_id, "❌ O arquivo solicitado não pôde ser gerado (falha de escrita). Tente novamente.")
         return False
         
     url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendDocument"
@@ -69,17 +79,16 @@ async def safe_send_file(chat_id: str, file_path: str, caption: str = ""):
         try:
             with open(file_path, "rb") as f:
                 files = {"document": (os.path.basename(file_path), f)}
-                data = {"chat_id": chat_id, "caption": caption}
-                resp = await client.post(url, data=data, files=files, timeout=30.0)
+                data = {"chat_id": str(chat_id), "caption": caption or f"✅ Documento Gerado ({os.path.getsize(file_path)} bytes)"}
+                resp = await client.post(url, data=data, files=files, timeout=45.0)
                 if resp.status_code == 200:
-                    logger.info(f"[Telegram] Arquivo enviado: {file_path} ({os.path.getsize(file_path)} bytes)")
+                    logger.info(f"[Telegram] ✅ Arquivo entregue com sucesso: {file_path}")
                     return True
                 else:
-                    logger.error(f"[Telegram] Erro API: {resp.text}")
+                    logger.error(f"[Telegram] ❌ Erro API Telegram ({resp.status_code}): {resp.text}")
                     return False
         except Exception as e:
-            logger.error(f"[Telegram] Erro no envio de documento: {str(e)}")
-            await send_telegram_message(chat_id, f"❌ Erro ao enviar arquivo para o Telegram: {str(e)[:100]}")
+            logger.error(f"[Telegram] ❌ Erro no envio: {str(e)}")
             return False
 
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}

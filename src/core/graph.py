@@ -36,6 +36,27 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
+async def wait_for_file(file_path: str, max_wait: float = 5.0, check_interval: float = 0.5):
+    """
+    Aguarda até que o arquivo exista no disco e tenha tamanho > 0.
+    Retorna True se encontrou, False se timeout.
+    """
+    import os
+    import asyncio
+    import time
+    
+    start = time.time()
+    while time.time() - start < max_wait:
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            size = os.path.getsize(file_path)
+            logger.info(f"[FileWait] ✅ Arquivo confirmado após {time.time()-start:.1f}s: {file_path} ({size} bytes)")
+            return True
+        
+        await asyncio.sleep(check_interval)
+    
+    logger.error(f"[FileWait] ❌ Timeout após {max_wait}s aguardando: {file_path}")
+    return False
+
 # --- Setup dos Modelos ---
 openai_llm = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0)
 gemini_llm = ChatGoogleGenerativeAI(
@@ -122,7 +143,8 @@ async def agent_node(state, agent, name):
     # Garante que tags de arquivo/áudio geradas por ferramentas cheguem ao estado externo.
     tool_messages = [m for m in inner_messages if getattr(m, "type", "") == "tool"]
     tool_text = " ".join(str(m.content) for m in tool_messages)
-    file_tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):[^>]+>', tool_text)
+    # CORREÇÃO CRÍTICA: Adicionado parênteses para capturar apenas o nome do arquivo
+    file_tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):([^>]+)>', tool_text)
     
     # --- ENTREGA IMEDIATA (DICA DO USUÁRIO - CORREÇÃO DEFINITIVA) ---
     delivered_this_step = []
@@ -133,7 +155,9 @@ async def agent_node(state, agent, name):
         output_dir = os.path.abspath(settings.DATA_OUTPUTS_PATH)
         
         for filename in file_tags:
-            filename = filename.strip()
+            # Limpeza do filename (remove possíveis espaços ou tags residuais)
+            filename = filename.strip().replace("<SEND_FILE:", "").replace(">", "")
+            
             if filename in already_delivered: 
                 logger.info(f"[{name}] Arquivo já enviado anteriormente: {filename}")
                 continue
@@ -141,12 +165,13 @@ async def agent_node(state, agent, name):
             full_path = os.path.join(output_dir, filename)
             logger.info(f"[{name}] 🚨 ARQUIVO DETECTADO NO RESULTADO: {filename}")
             
-            if os.path.exists(full_path) and chat_id:
+            # ESPERA ATÉ 5 SEGUNDOS PELO ARQUIVO (CORREÇÃO DEFINITIVA)
+            if await wait_for_file(full_path, max_wait=5.0) and chat_id:
                 logger.info(f"[{name}] 🚀 DISPARANDO ENTREGA IMEDIATA para {chat_id}")
                 await safe_send_file(full_path, chat_id)
                 delivered_this_step.append(filename)
             else:
-                logger.warning(f"[{name}] ⚠️ Falha na entrega imediata: {filename} (Físico? {os.path.exists(full_path)})")
+                logger.warning(f"[{name}] ⚠️ Falha na entrega imediata: {filename} (Físico não encontrado ou ChatID vazio)")
 
     if file_tags:
         msg_content = str(msg.content) if not isinstance(msg.content, str) else msg.content
@@ -415,12 +440,12 @@ async def supervisor_node(state: AgentState):
                 filename = filename.strip()
                 full_path = os.path.join(output_dir, filename)
                 
-                if os.path.exists(full_path):
+                # ESPERA ATÉ 5 SEGUNDOS PELO ARQUIVO (REDUNDÂNCIA)
+                if await wait_for_file(full_path, max_wait=5.0):
                     logger.info(f"[Supervisor] 🚀 Disparando entrega de: {filename}")
-                    # Usamos await direto para garantir que o envio ocorra antes da finalização do node
                     await safe_send_file(full_path, chat_id)
                 else:
-                    logger.error(f"[Supervisor] ❌ Arquivo gerado em tag mas não encontrado no disco: {full_path}")
+                    logger.error(f"[Supervisor] ❌ Arquivo não apareceu no disco após espera: {full_path}")
 
         # Lógica de finalização original...
         last_human_idx = max((i for i, m in enumerate(messages) if m.type == "human"), default=0)
