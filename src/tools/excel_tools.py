@@ -100,7 +100,8 @@ async def create_excel(data: list, file_path: str, sheet_name: str = "Sheet1") -
             df = pd.DataFrame(clean_data)
             await asyncio.to_thread(df.to_excel, full_path, index=False, sheet_name=sheet_name)
             logger.info(f"✅ [ExcelGen] Sucesso via PANDAS: {full_path}")
-            return f"Planilha '{file_path}' criada com sucesso com {len(clean_data)} linhas.\n<SEND_FILE:{os.path.basename(full_path)}>"
+            size = os.path.getsize(full_path)
+            return f"Planilha '{file_path}' gerada com sucesso ({size} bytes).\n<SEND_FILE:{os.path.basename(full_path)}>"
         except Exception as pe:
             logger.warning(f"⚠️ [ExcelGen] Pandas falhou: {pe}. Tentando FALLBACK OpenPyXL...")
             

@@ -176,9 +176,12 @@ async def qa_node(state): return await agent_node(state, qa_agent, "arth_qa")
 async def analyst_node(state): 
     new_messages = list(state.get("messages", []))
     new_messages.append(SystemMessage(content=(
-        "🚨 INSTRUÇÃO DE SEGURANÇA: O usuário fez uma nova solicitação de documento ou planilha. "
-        "Você DEVE chamar as ferramentas (generate_pdf, generate_docx, generate_pptx, create_excel) AGORA ANTES de ditar a resposta final. "
-        "NUNCA crie (alucine) tags <SEND_FILE:> da sua cabeça. Você só pode repassar as tags que as ferramentas te devolverem."
+        "🚨 INSTRUÇÃO DE DOCUMENTAÇÃO (CRÍTICO): Se houver conteúdo de pesquisa feito pelo arth_researcher no histórico recente, "
+        "você DEVE ler esse conteúdo e injetá-lo na íntegra DENTRO do argumento 'content' ao chamar as ferramentas de geração (PDF/DOCX/PPTX).\n"
+        "Exemplo de formatação para o 'content':\n"
+        "RELATÓRIO DE PESQUISA\n=====================\n[Cole o texto da pesquisa aqui]\n--- Fim do relatório ---\n\n"
+        "🚨 INSTRUÇÃO DE SEGURANÇA: NUNCA crie (alucine) tags <SEND_FILE:> da sua cabeça. "
+        "Você DEVE chamar as ferramentas (generate_pdf, generate_docx, generate_pptx, create_excel) AGORA ANTES de ditar a resposta final."
     )))
     return await agent_node({**state, "messages": new_messages}, analyst_agent, "arth_analyst")
 
