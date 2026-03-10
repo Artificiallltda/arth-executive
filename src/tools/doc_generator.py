@@ -167,6 +167,12 @@ class ArthPDF(FPDF):
         self.cell(0, 10, f"Página {self.page_no()}", 0, 0, "C")
 
 
+# ==============================================================================
+# 🛡️ BLINDAGEM DE PDF (DO NOT MODIFY) 🛡️
+# Atenção Desenvolvedor/AI:
+# O USO DE `effective_width` AO INVÉS DE `w=0` NO MULTICELL É OBRIGATÓRIO PARA O FPDF2.
+# NÃO MODIFIQUE OS IMPORTES DO FPDF E ESTA LÓGICA DE QUEBRA, EVITE REGRESSÕES 'Not enough horizontal space'.
+# ==============================================================================
 @tool
 async def generate_pdf(title: str, content: str) -> str:
     """Cria um documento PDF com visual executivo e suporte total a UTF-8."""
@@ -197,6 +203,9 @@ async def generate_pdf(title: str, content: str) -> str:
             text = re.sub(r'\*([^*]+)\*', r'\1', text)
             return text.encode("latin-1", errors="replace").decode("latin-1")
 
+        # Usa a largura efetiva da página em vez de 0 para evitar o bug de espaço horizontal do fpdf2
+        effective_width = pdf.w - pdf.l_margin - pdf.r_margin
+
         # Conteúdo
         for line in content.split('\n'):
             stripped = line.strip()
@@ -209,7 +218,7 @@ async def generate_pdf(title: str, content: str) -> str:
                 pdf.ln(4)
                 pdf.set_font("Helvetica", "B", 17)
                 pdf.set_text_color(28, 78, 158)
-                pdf.multi_cell(0, 11, _clean(stripped[2:]))
+                pdf.multi_cell(effective_width, 11, _clean(stripped[2:]))
                 # Underline do H1
                 y2 = pdf.get_y() + 1
                 pdf.set_draw_color(28, 78, 158)
@@ -221,32 +230,30 @@ async def generate_pdf(title: str, content: str) -> str:
                 pdf.ln(3)
                 pdf.set_font("Helvetica", "B", 14)
                 pdf.set_text_color(36, 110, 185)
-                pdf.multi_cell(0, 9, _clean(stripped[3:]))
+                pdf.multi_cell(effective_width, 9, _clean(stripped[3:]))
                 pdf.ln(2)
 
             elif stripped.startswith('### '):
                 pdf.ln(2)
                 pdf.set_font("Helvetica", "B", 12)
                 pdf.set_text_color(64, 64, 64)
-                pdf.multi_cell(0, 8, _clean(stripped[4:]))
+                pdf.multi_cell(effective_width, 8, _clean(stripped[4:]))
                 pdf.ln(1)
 
             elif stripped.startswith('- ') or stripped.startswith('* '):
                 pdf.set_font("Helvetica", "", 11)
                 pdf.set_text_color(50, 50, 50)
-                pdf.multi_cell(0, 7, f"  -  {_clean(stripped[2:])}")
+                pdf.multi_cell(effective_width, 7, f"  -  {_clean(stripped[2:])}")
 
             elif re.match(r'^\d+\. ', stripped):
                 body = re.sub(r'^\d+\. ', '', stripped)
                 pdf.set_font("Helvetica", "", 11)
                 pdf.set_text_color(50, 50, 50)
-                pdf.multi_cell(0, 7, f"  {_clean(body)}")
+                pdf.multi_cell(effective_width, 7, f"  {_clean(body)}")
 
             else:
                 pdf.set_font("Helvetica", "", 11)
                 pdf.set_text_color(50, 50, 50)
-                # Usa a largura efetiva da página para evitar erro de espaço horizontal
-                effective_width = pdf.w - pdf.l_margin - pdf.r_margin
                 pdf.multi_cell(effective_width, 7, _clean(stripped))
                 pdf.ln(2)
 
