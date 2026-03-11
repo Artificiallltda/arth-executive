@@ -100,14 +100,35 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
             # Limpa tags para a explicação ficar elegante
             clean_response = re.sub(r'<(?:SEND_FILE|SEND_AUDIO):[^>]+>', '', final_text).strip()
             
-            # Fallback Premium Manus AI caso a LLM tenha retornado só texto curto ou genérico
+            # Fallback Premium Manus AI dinâmico baseado no tipo de arquivo
             is_weak_text = not clean_response or len(clean_response) < 40 or "tarefa" in clean_response.lower() or "sucesso" in clean_response.lower()
             if unique_files and is_weak_text:
-                clean_response = (
-                    "✨ **O material solicitado foi gerado com precisão executiva.**\n\n"
-                    "O conteúdo foi estruturado seguindo os mais altos padrões de design do *Manus AI*. "
-                    "O arquivo está sendo enviado abaixo para visualização imediata. 👑"
-                )
+                first_file = unique_files[0].lower()
+                
+                if first_file.endswith('.png') or first_file.endswith('.jpg'):
+                    clean_response = (
+                        "📸 **Imagem Gerada com Sucesso**\n\n"
+                        "Foi aplicada uma direção de arte de alto padrão para traduzir a sua solicitação em uma composição visual única. "
+                        "Confira o resultado abaixo. 👑"
+                    )
+                elif first_file.endswith('.pdf'):
+                    clean_response = (
+                        "📄 **Pesquisa & Relatório Executivo**\n\n"
+                        "Consolidei as informações solicitadas em um relatório blindado com design editorial *Manus AI*. "
+                        "O documento está formatado e pronto para leitura ou encaminhamento estratégico. 👑"
+                    )
+                elif first_file.endswith('.docx'):
+                    clean_response = (
+                        "📝 **Documento Word Estruturado**\n\n"
+                        "O texto foi elaborado com precisão corporativa e organizado com estilos e tipografia da paleta Executiva. "
+                        "O arquivo aberto já está à sua disposição abaixo. 👑"
+                    )
+                else:
+                    clean_response = (
+                        "✨ **Material Gerado com Precisão**\n\n"
+                        "O conteúdo foi estruturado seguindo os mais altos padrões de entrega do *Manus AI*. "
+                        "O arquivo está sendo enviado abaixo para utilização imediata. 👑"
+                    )
 
             if clean_response and clean_response.lower() != "tarefa concluída":
                 if channel == "telegram":
