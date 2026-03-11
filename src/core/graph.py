@@ -193,7 +193,7 @@ async def agent_node(state, agent, name):
             # ESPERA ATÉ 5 SEGUNDOS PELO ARQUIVO (CORREÇÃO DEFINITIVA)
             if await wait_for_file(full_path, max_wait=5.0) and chat_id:
                 logger.info(f"[{name}] 🚀 DISPARANDO ENTREGA IMEDIATA para {chat_id}")
-                await safe_send_file(full_path, chat_id)
+                await safe_send_file(chat_id, full_path)
                 delivered_this_step.append(filename)
             else:
                 logger.warning(f"[{name}] ⚠️ Falha na entrega imediata: {filename} (Físico não encontrado ou ChatID vazio)")
