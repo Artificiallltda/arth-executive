@@ -366,7 +366,15 @@ async def supervisor_node(state: AgentState):
         logger.warning(f"[Supervisor] Loop detectado {repeat_info}. Forçando FINISH.")
         return {"next_agent": "FINISH"}
 
-    routing_result = await supervisor_chain.ainvoke(state)
+    # --- TRUNFAMENTO DE CONTEXTO (PREVENÇÃO DE ERRO 429 TPM) ---
+    # O Supervisor não precisa ler 500k tokens de histórico para decidir a rota.
+    # Enviamos apenas as últimas 15 mensagens para manter a agilidade e economia.
+    short_messages = messages[-15:] if len(messages) > 15 else messages
+    
+    # Prepara um estado reduzido para o supervisor_chain
+    minimal_state = {**state, "messages": short_messages}
+
+    routing_result = await supervisor_chain.ainvoke(minimal_state)
     logger.info(f"[ROUTER] Decisão LLM: {routing_result.next_agent}")
     
     # Estrutural: Valida se a rota faz sentido para a capacidade
