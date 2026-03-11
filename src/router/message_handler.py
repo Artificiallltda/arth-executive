@@ -91,22 +91,28 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
             else:
                 final_text = "Tarefa processada com sucesso."
 
+            # --- ENVIO DE TEXTO E MÍDIA ---
+            # Extrair todas as tags de arquivo de todas as mensagens geradas pelas IAs neste turno
+            all_ai_text = " ".join([r["text"] for r in responses_pool])
+            file_tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):([^>]+)>', all_ai_text)
+            unique_files = list(dict.fromkeys([t.strip() for t in file_tags]))
+
             # Limpa tags para a explicação ficar elegante
             clean_response = re.sub(r'<(?:SEND_FILE|SEND_AUDIO):[^>]+>', '', final_text).strip()
             
+            # Fallback Premium Manus AI caso a LLM tenha retornado só a tag do arquivo
+            if unique_files and not clean_response:
+                clean_response = (
+                    "✨ **O material solicitado foi gerado com sucesso.**\n\n"
+                    "O conteúdo foi estruturado seguindo os padrões de excelência executiva do *Manus AI*. "
+                    "O arquivo está sendo enviado abaixo para visualização imediata. 👑"
+                )
+
             if clean_response and clean_response.lower() != "tarefa concluída":
                 if channel == "telegram":
                     await send_telegram_message(user_id, clean_response)
                 elif channel == "whatsapp":
                     await send_whatsapp_message(user_id, clean_response)
-
-            # --- ENVIO DE MÍDIA / ARQUIVOS ---
-            # Extrair todas as tags de arquivo de todas as mensagens geradas pelas IAs neste turno
-            all_ai_text = " ".join([r["text"] for r in responses_pool])
-            file_tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):([^>]+)>', all_ai_text)
-            
-            # Deduplicar arquivos para não enviar o mesmo PDF/Imagem duas vezes
-            unique_files = list(dict.fromkeys([t.strip() for t in file_tags]))
             
             for filename in unique_files:
                 full_path = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
