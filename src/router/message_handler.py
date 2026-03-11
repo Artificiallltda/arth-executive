@@ -100,6 +100,34 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
                 elif channel == "whatsapp":
                     await send_whatsapp_message(user_id, clean_response)
 
+            # --- ENVIO DE MÍDIA / ARQUIVOS ---
+            # Extrair todas as tags de arquivo de todas as mensagens geradas pelas IAs neste turno
+            all_ai_text = " ".join([r["text"] for r in responses_pool])
+            file_tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):([^>]+)>', all_ai_text)
+            
+            # Deduplicar arquivos para não enviar o mesmo PDF/Imagem duas vezes
+            unique_files = list(dict.fromkeys([t.strip() for t in file_tags]))
+            
+            for filename in unique_files:
+                full_path = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
+                
+                # Aguardar o arquivo ser gravado no disco (timeout 15s)
+                import time
+                start_wait = time.time()
+                file_ready = False
+                while time.time() - start_wait < 15.0:
+                    if os.path.exists(full_path) and os.path.getsize(full_path) > 0:
+                        file_ready = True
+                        break
+                    await asyncio.sleep(0.5)
+                
+                if file_ready:
+                    if channel == "telegram":
+                        await safe_send_file(user_id, full_path)
+                    elif channel == "whatsapp":
+                        from src.router.adapters.whatsapp import safe_send_whatsapp_file
+                        await safe_send_whatsapp_file(user_id, full_path)
+
             return None 
 
         except Exception as e:
