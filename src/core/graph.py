@@ -84,40 +84,46 @@ qa_agent = create_specialist_agent([search_memory, save_memory], load_persona("q
 
 async def agent_node(state, agent, name):
     messages = list(state.get("messages", []))
-    
-    # Injeta contexto de canal/usuário
     user_id = state.get("user_id", "")
     channel = state.get("channel", "")
-    if user_id and channel:
-        messages = [SystemMessage(content=f"[CONTEXTO]: Canal='{channel}', user_id='{user_id}'.")] + messages
-
+    
     result = await agent.ainvoke({**state, "messages": messages}, RunnableConfig(recursion_limit=50))
     msg = result["messages"][-1]
 
-    # Normaliza conteúdo (str)
     if not isinstance(msg.content, str):
         msg = msg.model_copy(update={"content": str(msg.content)})
 
-    # Captura tags de arquivos gerados por ferramentas
     tool_messages = [m for m in result["messages"] if getattr(m, "type", "") == "tool"]
     tool_text = " ".join(str(m.content) for m in tool_messages)
     file_tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):([^>]+)>', tool_text)
     
-    # IMPORTANTE: Não enviamos aqui para manter a ordem Texto -> Arquivo.
-    # Apenas injetamos no histórico para o Supervisor ver.
-    if file_tags:
-        msg_content = msg.content
+    # --- ENTREGA IMEDIATA BLINDADA ---
+    # Garantimos que o arquivo seja enviado assim que gerado, mas apenas UMA vez.
+    delivered_now = []
+    if file_tags and user_id and channel == "telegram":
+        from src.router.adapters.telegram import safe_send_file
+        already_delivered = state.get("delivered_files", []) or []
         for tag in file_tags:
-            tag_str = f"<SEND_FILE:{tag}>"
-            if tag_str not in msg_content:
-                msg_content += f"\n{tag_str}"
-        msg = msg.model_copy(update={"content": msg_content})
+            filename = tag.strip()
+            if filename not in already_delivered:
+                full_path = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
+                if await wait_for_file(full_path):
+                    await safe_send_file(user_id, full_path)
+                    delivered_now.append(filename)
+
+    # Injeta as tags na mensagem para o estado saber
+    msg_content = msg.content
+    for tag in file_tags:
+        t_str = f"<SEND_FILE:{tag}>"
+        if t_str not in msg_content: msg_content += f"\n{t_str}"
+    msg = msg.model_copy(update={"content": msg_content})
 
     return {
         "messages": [msg],
         "sender": name,
         "content": state.get("content", ""),
-        "user_input": state.get("user_input", "")
+        "user_input": state.get("user_input", ""),
+        "delivered_files": list(state.get("delivered_files", []) or []) + delivered_now
     }
 
 async def researcher_node(state): 
@@ -150,8 +156,6 @@ supervisor_chain = prompt | supervisor_llm.with_structured_output(RouteResponse)
 
 async def supervisor_node(state: AgentState):
     messages = list(state.get("messages", []))
-    
-    # Detecção de loops e finalização imediata de mídias
     last_human_idx = max((i for i, m in enumerate(messages) if m.type == "human"), default=0)
     msgs_this_turn = messages[last_human_idx + 1:]
     
@@ -159,34 +163,23 @@ async def supervisor_node(state: AgentState):
     has_file = False
     for m in msgs_this_turn:
         if m.type == "ai" and getattr(m, "name", "") in members:
-            name = m.name
-            specialist_runs[name] = specialist_runs.get(name, 0) + 1
-            content_str = str(m.content)
-            if "<SEND_FILE:" in content_str: has_file = True
-            
-            # --- BLINDAGEM DE VELOCIDADE ORION ---
-            # Se o Executor já gerou imagem ou áudio, termina NA HORA. 
-            # Não deixa o Analista ou Researcher "meterem a colher".
-            if name == "arth_executor" and any(ext in content_str for ext in [".png", ".jpg", ".mp3", ".wav"]):
-                logger.info("[Supervisor] Imagem/Áudio gerado. Encerrando para velocidade máxima.")
-                return {"next_agent": "FINISH"}
+            specialist_runs[m.name] = specialist_runs.get(m.name, 0) + 1
+            if "<SEND_FILE:" in str(m.content): has_file = True
 
-    # Se o executor rodou mas não gerou arquivo, e já rodou 2 vezes, para tudo.
-    if specialist_runs.get("arth_executor", 0) >= 2:
+    # Trava de velocidade: Se gerou mídia, encerra.
+    if has_file and specialist_runs.get("arth_executor", 0) > 0:
         return {"next_agent": "FINISH"}
 
     short_messages = messages[-15:]
     routing_result = await supervisor_chain.ainvoke({**state, "messages": short_messages})
     
-    # Validação estrutural de rota (Pesquisa -> Analista -> Executor)
+    # Validação de Rota
     user_input = messages[last_human_idx].content.lower()
-    needs_file = any(kw in user_input for kw in ["pdf", "docx", "pptx", "excel", "planilha", "imagem"])
+    needs_file = any(kw in user_input for kw in ["pdf", "docx", "pptx", "excel", "planilha", "imagem", "foto"])
     
     if needs_file and routing_result.next_agent == "FINISH" and not has_file:
-        if specialist_runs.get("arth_analyst", 0) == 0:
-            routing_result.next_agent = "arth_analyst"
-        elif specialist_runs.get("arth_executor", 0) == 0:
-            routing_result.next_agent = "arth_executor"
+        if specialist_runs.get("arth_analyst", 0) == 0: return {"next_agent": "arth_analyst"}
+        if specialist_runs.get("arth_executor", 0) == 0: return {"next_agent": "arth_executor"}
 
     return {"next_agent": routing_result.next_agent}
 
@@ -198,10 +191,7 @@ def build_arth_graph():
     workflow.add_node("arth_executor", executor_node)
     workflow.add_node("arth_qa", qa_node)
     workflow.add_node("arth_analyst", analyst_node)
-
     workflow.add_edge(START, "arth_orchestrator")
-    for member in members:
-        workflow.add_edge(member, "arth_orchestrator")
-
+    for member in members: workflow.add_edge(member, "arth_orchestrator")
     workflow.add_conditional_edges("arth_orchestrator", lambda state: state["next_agent"], {k: k for k in members} | {"FINISH": END})
     return workflow
