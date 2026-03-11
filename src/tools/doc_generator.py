@@ -203,7 +203,7 @@ async def generate_docx(title: str = "Documento", content: str = "", filename: O
 _NAVY   = (10, 12, 16)      # Navy Profundo
 _COBALT = (88, 166, 255)    # Azul Cobalto (Electric)
 _TEXT   = (50, 50, 50)      # Cinza Escuro
-_AZUL_CORP = (28, 78, 158)  # Azul Corporativo
+_AZUL_CORP_PDF = (28, 78, 158)  # Azul Corporativo (Tupla para PDF)
 
 class ArthPDF(FPDF):
     def header(self):
@@ -273,7 +273,7 @@ async def generate_pdf(title: str, content: str) -> str:
         pdf.add_page()
 
         # TÍTULO PRINCIPAL (Box Colorido)
-        pdf.set_fill_color(*_AZUL_CORP)
+        pdf.set_fill_color(*_AZUL_CORP_PDF)
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Helvetica", "B", 20)
         pdf.cell(0, 15, _clean_pdf_text(title.upper()), 0, 1, 'C', fill=True)
@@ -294,12 +294,12 @@ async def generate_pdf(title: str, content: str) -> str:
 
             if stripped.startswith('# ') and not stripped.startswith('## '):
                 pdf.set_font("Helvetica", "B", 16)
-                pdf.set_text_color(*_AZUL_CORP)
+                pdf.set_text_color(*_AZUL_CORP_PDF)
                 _safe_multi_cell(pdf, eff_w, 10, clean_line[2:].replace("**", ""))
                 pdf.ln(2)
             elif stripped.startswith('## '):
                 pdf.set_font("Helvetica", "B", 14)
-                pdf.set_text_color(*_AZUL_CORP)
+                pdf.set_text_color(*_AZUL_CORP_PDF)
                 _safe_multi_cell(pdf, eff_w, 9, clean_line[3:].replace("**", ""))
                 pdf.ln(1)
             elif stripped.startswith('- ') or stripped.startswith('* '):
