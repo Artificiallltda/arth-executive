@@ -13,6 +13,7 @@ from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from src.config import settings
+from src.tools.image_generator import generate_image
 from typing import Any, Union
 from pydantic import BaseModel, Field
 
@@ -264,6 +265,20 @@ async def generate_pptx(slides_content_json: Any) -> str:
                         # Remove a tag do texto para não ficar poluído, já que ela vai pro slide
                         bullets[b_idx] = re.sub(r'<SEND_FILE:[^>]+>', '', str(bullet)).strip()
                         break
+            
+            # --- AUTO-GERAÇÃO MANUS AI (Fallback) ---
+            # Se a IA principal esqueceu de passar a imagem para o PPTX, criamos uma na hora!
+            if not img_path and i < 8: # Limitamos a 8 slides automáticos para não travar a API
+                try:
+                    logger.info(f"[PPTXGen] Slide {i+1}: IA não mandou imagem. Auto-gerando com tema: {title}...")
+                    prompt_img = f"Corporate presentation slide background for topic: {title}. Professional, executive, abstract blue data analytics style, minimal."
+                    res_img = await generate_image.ainvoke({"prompt": prompt_img, "orientation": "square"})
+                    m = re.search(r'<SEND_FILE:(img-[^>]+)>', str(res_img))
+                    if m:
+                        img_path = m.group(1)
+                        logger.info(f"[PPTXGen] Auto-imagem injetada: {img_path}")
+                except Exception as e_img:
+                    logger.error(f"[PPTXGen] Falhou ao auto-gerar imagem para slide {i+1}: {e_img}")
 
             _build_content(prs, title, bullets, img_path)
 

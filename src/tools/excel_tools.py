@@ -68,17 +68,24 @@ def _apply_premium_style(file_path: str):
         
         # Paleta Corporativa Premium Executiva
         header_fill = PatternFill(start_color="1C4E9E", end_color="1C4E9E", fill_type="solid") # Azul Corporativo
+        zebra_fill = PatternFill(start_color="F9FAFB", end_color="F9FAFB", fill_type="solid") # Cinza super claro
         header_font = Font(color="FFFFFF", bold=True, name="Calibri", size=12)
         cell_font = Font(name="Calibri", size=11, color="333333")
         thin_border = Border(
-            left=Side(style='thin', color='D3D3D3'), 
-            right=Side(style='thin', color='D3D3D3'), 
-            top=Side(style='thin', color='D3D3D3'), 
-            bottom=Side(style='thin', color='D3D3D3')
+            left=Side(style='thin', color='E5E7EB'), 
+            right=Side(style='thin', color='E5E7EB'), 
+            top=Side(style='thin', color='E5E7EB'), 
+            bottom=Side(style='thin', color='E5E7EB')
         )
         
         for sheet_name in wb.sheetnames:
             ws = wb[sheet_name]
+            
+            # Congelar painel superior (Header) e adicionar Filtro
+            ws.freeze_panes = "A2"
+            if ws.max_column > 0:
+                end_col_letter = get_column_letter(ws.max_column)
+                ws.auto_filter.ref = f"A1:{end_col_letter}{ws.max_row}"
             
             # Formatar Cabeçalhos
             for col in range(1, ws.max_column + 1):
@@ -88,19 +95,24 @@ def _apply_premium_style(file_path: str):
                 cell.alignment = Alignment(horizontal="center", vertical="center")
                 cell.border = thin_border
             
-            # Formatar Células e Ajustar Largura
+            # Formatar Células, Stripe e Ajustar Largura
             for col in range(1, ws.max_column + 1):
                 max_len = len(str(ws.cell(row=1, column=col).value or ""))
                 for row in range(2, ws.max_row + 1):
                     c = ws.cell(row=row, column=col)
                     c.font = cell_font
                     c.border = thin_border
-                    c.alignment = Alignment(vertical="center")
+                    c.alignment = Alignment(vertical="center", wrap_text=True)
+                    
+                    # Zebra Striping (linhas pares com fundo leve)
+                    if row % 2 == 0:
+                        c.fill = zebra_fill
+
                     if c.value:
                         max_len = max(max_len, len(str(c.value)))
                 
-                # Ajuste inteligente de largura de coluna
-                adjusted_width = min(max_len + 5, 60)
+                # Ajuste inteligente de largura de coluna (limitado a 60 caracteres)
+                adjusted_width = min(max_len + 5, 80)
                 ws.column_dimensions[get_column_letter(col)].width = adjusted_width
 
         wb.save(file_path)
