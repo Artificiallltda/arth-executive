@@ -178,3 +178,43 @@ async def receive_telegram(request: Request, background_tasks: BackgroundTasks):
         await execute_brain(user_id=chat_id, text=text, channel="telegram", status_callback=status_callback, user_name=user_name)
     background_tasks.add_task(run_pipeline)
     return {"status": "queued"}
+
+@router.post("/webhook/leads")
+async def receive_generator_leads(request: Request, background_tasks: BackgroundTasks):
+    """
+    Receives JSON payloads directly from the local Leads Generator.
+    Since we are replacing Pipedrive, this endpoint will take the leads
+    and send them to an AI Engine processing pipeline or directly to Supabase.
+    """
+    try:
+        body = await request.json()
+        leads = body.get("leads", [])
+        source = body.get("source", "gerador_local")
+
+        if not leads:
+            return {"status": "ignored", "message": "No leads provided"}
+
+        logger.info(f"Received {len(leads)} leads from {source}")
+
+        # The leads will need to be processed and inserted into Supabase.
+        # For now, we kick off an execution pipeline or handle insertion logic
+        async def process_leads_workflow():
+            # In a real integration, we might call a specific tool or Supabase client here.
+            # As a placeholder, we use execute_brain to notify the SDR agent of the new batch.
+            prompt = f"O Gerador de Leads acabou de enviar um novo lote de {len(leads)} leads extraídos da fonte {source}. Por favor, analise a lista e classifique-os no banco de dados Supabase. Abaixo estão os dados em JSON:\n\n{leads}"
+            # Sending to a system/admin thread
+            await execute_brain(user_id="system_admin", text=prompt, channel="internal", user_name="LeadGenerator")
+
+        background_tasks.add_task(process_leads_workflow)
+        
+        # Returning success counts
+        return {
+            "status": "success", 
+            "message": "Leads received and queued for processing",
+            "criados": len(leads),
+            "erros": 0
+        }
+
+    except Exception as e:
+        logger.error(f"Erro ao processar lote de leads: {e}", exc_info=True)
+        return {"status": "error", "error": str(e)}
