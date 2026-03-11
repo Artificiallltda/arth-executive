@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     
     # --- KEYS ---
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
     

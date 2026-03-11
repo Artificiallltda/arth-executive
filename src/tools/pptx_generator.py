@@ -231,54 +231,25 @@ async def generate_pptx(slides_content_json: Any) -> str:
             slides_data = [{"title": "Sem Dados Estruturados", "bullets": ["O agente não enviou informações estruturadas adequadas."]}]
 
         # ==================================================================
-        # GERAÇÃO PREMIUM (REMASTERIZADA)
+        # GERAÇÃO PREMIUM (REMASTERIZADA MANUS AI)
         # ==================================================================
         prs = Presentation()
         prs.slide_width = _W
         prs.slide_height = _H
 
-        # Slide 1: TÍTULO (DESIGN MELHORADO)
-        slide_layout = prs.slide_layouts[0]
-        slide = prs.slides.add_slide(slide_layout)
-        title_shape = slide.shapes.title
-        subtitle_shape = slide.placeholders[1]
+        # Slide 1: CAPA (Design Navy + Cobalt)
+        _build_cover(prs, prs_title, prs_subtitle)
         
-        title_shape.text = str(prs_title)[:100]
-        title_shape.text_frame.paragraphs[0].font.size = Pt(44)
-        title_shape.text_frame.paragraphs[0].font.bold = True
-        title_shape.text_frame.paragraphs[0].font.color.rgb = RGBColor(0, 51, 102) # Navy Blue
-        
-        subtitle_shape.text = "Arth Executive - Gerado automaticamente"
-        subtitle_shape.text_frame.paragraphs[0].font.size = Pt(24)
-        subtitle_shape.text_frame.paragraphs[0].font.color.rgb = RGBColor(128, 128, 128)
-        
-        # Slides de conteúdo
+        # Slides de Conteúdo
         for i, s_data in enumerate(slides_data):
-            slide_layout = prs.slide_layouts[1]
-            slide = prs.slides.add_slide(slide_layout)
-            title_shape = slide.shapes.title
-            content_shape = slide.placeholders[1]
+            title = s_data.get("title", f"PONTO ANALÍTICO {i+1}")
+            bullets = s_data.get("bullets", s_data.get("content", []))
+            if isinstance(bullets, str): bullets = [bullets]
             
-            # Título do slide
-            title_text = s_data.get("title", f"Slide {i+1}")
-            title_shape.text = str(title_text)[:60]
-            title_shape.text_frame.paragraphs[0].font.size = Pt(32)
-            title_shape.text_frame.paragraphs[0].font.bold = True
-            title_shape.text_frame.paragraphs[0].font.color.rgb = RGBColor(0, 51, 102)
-
-            # Conteúdo (Bullets) - Join se for lista
-            bullets = s_data.get("bullets", [])
-            if isinstance(bullets, list):
-                content_text = "\n".join([str(b) for b in bullets])
-            else:
-                content_text = str(bullets)
+            # Tenta encontrar imagem se houver no conteúdo
+            img_path = s_data.get("image", s_data.get("img_path", None))
             
-            content_shape.text = content_text
-            
-            # Ajusta fonte do conteúdo
-            for paragraph in content_shape.text_frame.paragraphs:
-                paragraph.font.size = Pt(20)
-                paragraph.font.name = 'Arial'
+            _build_content(prs, title, bullets, img_path)
 
         await asyncio.to_thread(prs.save, filepath)
         

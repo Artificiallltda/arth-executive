@@ -36,7 +36,7 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
-async def wait_for_file(file_path: str, max_wait: float = 5.0, check_interval: float = 0.5):
+async def wait_for_file(file_path: str, max_wait: float = 10.0, check_interval: float = 0.5):
     """
     Aguarda até que o arquivo exista no disco e tenha tamanho > 0.
     Retorna True se encontrou, False se timeout.
@@ -57,20 +57,26 @@ async def wait_for_file(file_path: str, max_wait: float = 5.0, check_interval: f
     logger.error(f"[FileWait] ❌ Timeout após {max_wait}s aguardando: {file_path}")
     return False
 
-# --- Setup dos Modelos Especializados (Configuração Definitiva) ---
-# 🧠 SUPERVISOR: Raciocínio profundo para roteamento perfeito
+# --- Setup dos Modelos Especializados (Arquitetura Híbrida Custo-Benefício) ---
+
+# 🧠 ORQUESTRADOR / SUPERVISOR: GPT-4o para estabilidade de roteamento e análise de intenção
 supervisor_llm = ChatOpenAI(model="gpt-4o", temperature=0, max_tokens=4000)
 
-# 📝 ANALISTA: Redação de documentos complexos (DOCX/Excel/PDF)
-analyst_llm = ChatOpenAI(model="gpt-4o", temperature=0.3, max_tokens=8000)
+# 🧠 CÉREBRO E CONTEXTO PESADO: DeepSeek V3 (Uso de API direta via OpenAI compatibility layer)
+# Destinado a: Researcher, Analyst e Planner (Geração de conteúdo rico e processamento pesado)
+deepseek_llm = ChatOpenAI(
+    model="deepseek-chat",
+    openai_api_key=settings.DEEPSEEK_API_KEY,
+    openai_api_base="https://api.deepseek.com",
+    temperature=0.3,
+    max_tokens=8000
+)
 
-# ⚡ EXECUÇÃO RÁPIDA: Pesquisa e Planejamento
-fast_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+# ⚡ EXECUÇÃO PRECISA E TOOL CALLING: GPT-4o-mini
+# Destinado a: Executor (Precisão extrema em Schemas JSON e Structured Outputs)
+executor_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
-# 🎨 EXECUTOR: Mídias e Imagens (temperatura para criatividade)
-executor_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.5)
-
-# fallback de segurança
+# fallback de segurança (Google Gemini)
 gemini_fallback = ChatGoogleGenerativeAI(
     model=settings.GEMINI_MODEL,
     google_api_key=settings.GEMINI_API_KEY, 
@@ -106,16 +112,22 @@ def create_specialist_agent(tools, system_prompt: str, model_instance):
         logger.warning(f"Agente criado sem ferramentas válidas! Prompt: {system_prompt[:50]}")
     return create_react_agent(model=model_instance.with_fallbacks([gemini_fallback]), tools=safe_tools, prompt=system_prompt)
 
-# Pesquisador e Planejador usam o modelo rápido (Mini)
-researcher_agent = create_specialist_agent([search_web, read_url, read_document, search_memory, save_memory, query_knowledge_base], load_persona("researcher.md"), fast_llm)
-planner_agent = create_specialist_agent([get_current_time, search_memory, save_memory, schedule_reminder], load_persona("planner.md"), fast_llm)
+# 1. Pesquisador, Analista e Planejador -> DeepSeek V3 (Cérebro e Contexto)
+researcher_agent = create_specialist_agent([search_web, read_url, read_document, search_memory, save_memory, query_knowledge_base], load_persona("researcher.md"), deepseek_llm)
+planner_agent = create_specialist_agent([get_current_time, search_memory, save_memory, schedule_reminder], load_persona("planner.md"), deepseek_llm)
+analyst_agent = create_specialist_agent([analyze_data_file, read_document, read_excel, audit_supabase_security, audit_database_schema, search_memory, save_memory], load_persona("analyst.md"), deepseek_llm)
 
-# Executor usa o modelo rápido
-executor_agent = create_specialist_agent([get_current_time, execute_python_code, save_memory, search_memory, ask_chefia, generate_image, generate_audio, upload_document_to_knowledge_base], load_persona("executor.md"), executor_llm)
+# 2. Executor (File Generator) -> GPT-4o-mini (Estabilidade em Tool Calling/JSON)
+# Agora assume TODA a geração de arquivos estruturados (Excel, PDF, PPTX, DOCX) + Mídias
+executor_agent = create_specialist_agent([
+    get_current_time, execute_python_code, save_memory, search_memory, 
+    ask_chefia, generate_image, generate_audio, upload_document_to_knowledge_base,
+    generate_docx, generate_pdf, generate_pptx, create_excel, append_to_excel
+], load_persona("executor.md"), executor_llm)
 
-# QA e ANALISTA usam o Cérebro Grande (GPT-4o) para garantir perfeição nos dados
+# 3. QA usa o Supervisor (GPT-4o)
 qa_agent = create_specialist_agent([search_memory, save_memory], load_persona("qa.md"), supervisor_llm)
-analyst_agent = create_specialist_agent([analyze_data_file, read_document, create_excel, append_to_excel, read_excel, generate_pdf, generate_docx, generate_pptx, audit_supabase_security, audit_database_schema, search_memory, save_memory], load_persona("analyst.md"), analyst_llm)
+
 
 async def agent_node(state, agent, name):
     messages = list(state.get("messages", []))
@@ -131,7 +143,7 @@ async def agent_node(state, agent, name):
             )
         )] + messages
 
-    result = await agent.ainvoke({**state, "messages": messages}, RunnableConfig(recursion_limit=25))
+    result = await agent.ainvoke({**state, "messages": messages}, RunnableConfig(recursion_limit=50))
     inner_messages = result["messages"]
     msg = inner_messages[-1]
 
