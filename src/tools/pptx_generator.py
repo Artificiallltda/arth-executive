@@ -246,9 +246,19 @@ async def generate_pptx(slides_content_json: Any) -> str:
             bullets = s_data.get("bullets", s_data.get("content", []))
             if isinstance(bullets, str): bullets = [bullets]
             
-            # Tenta encontrar imagem se houver no conteúdo
+            # --- INTELIGÊNCIA DE IMAGEM ORION ---
+            # Escaneia os bullets em busca de tags de imagem geradas pelo Executor
             img_path = s_data.get("image", s_data.get("img_path", None))
             
+            if not img_path:
+                for b_idx, bullet in enumerate(bullets):
+                    match = re.search(r'<SEND_FILE:(img-[^>]+)>', str(bullet))
+                    if match:
+                        img_path = match.group(1)
+                        # Remove a tag do texto para não ficar poluído, já que ela vai pro slide
+                        bullets[b_idx] = re.sub(r'<SEND_FILE:[^>]+>', '', str(bullet)).strip()
+                        break
+
             _build_content(prs, title, bullets, img_path)
 
         await asyncio.to_thread(prs.save, filepath)

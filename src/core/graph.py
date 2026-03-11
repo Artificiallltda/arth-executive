@@ -300,7 +300,7 @@ def validate_agent_choice(agent_name: str, state: dict) -> str:
     user_input = messages[last_human_idx].content.lower() if messages else ""
     
     # Detecta intenções
-    search_keywords = ["pesquise", "busque", "google", "internet", "saiba sobre", "procure", "encontre", "analise", "veja sobre", "informações sobre"]
+    search_keywords = ["pesquise", "pesquisa", "busque", "google", "internet", "saiba sobre", "procure", "encontre", "analise", "veja sobre", "informações sobre"]
     needs_search = any(kw in user_input for kw in search_keywords)
     
     # Detecta tipo de arquivo solicitado
