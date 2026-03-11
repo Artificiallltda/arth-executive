@@ -247,6 +247,20 @@ def _clean_pdf_text(text: str) -> str:
     # Força codificação latin-1 ignorando o que não couber
     return text.encode("latin-1", errors="replace").decode("latin-1")
 
+def _safe_multi_cell(pdf, w, h, txt):
+    """Fallback seguro para textos sem espaços (como URLs longas) que quebram o FPDF."""
+    try:
+        pdf.multi_cell(w, h, txt)
+    except Exception as e:
+        # Palavras gigantes sem espaço causam "Not enough horizontal space"
+        # Quebramos a força
+        import textwrap
+        wrapped = "\\n".join(textwrap.wrap(txt, width=90, break_long_words=True))
+        try:
+            pdf.multi_cell(w, h, wrapped)
+        except:
+            pass # se ainda der erro, ignora a linha fatal
+
 @tool(args_schema=PdfSchema)
 async def generate_pdf(title: str, content: str) -> str:
     """Cria um documento PDF Executivo Premium com design Manus AI."""
@@ -291,21 +305,21 @@ async def generate_pdf(title: str, content: str) -> str:
             if stripped.startswith('# ') and not stripped.startswith('## '):
                 pdf.set_font("Helvetica", "B", 16)
                 pdf.set_text_color(*_AZUL_CORP)
-                pdf.multi_cell(0, 10, clean_line[2:].replace("**", ""))
+                _safe_multi_cell(pdf, eff_w, 10, clean_line[2:].replace("**", ""))
                 pdf.ln(2)
             elif stripped.startswith('## '):
                 pdf.set_font("Helvetica", "B", 14)
                 pdf.set_text_color(*_AZUL_CORP)
-                pdf.multi_cell(0, 9, clean_line[3:].replace("**", ""))
+                _safe_multi_cell(pdf, eff_w, 9, clean_line[3:].replace("**", ""))
                 pdf.ln(1)
             elif stripped.startswith('- ') or stripped.startswith('* '):
                 pdf.set_font("Helvetica", "", 11)
                 pdf.set_text_color(*_TEXT)
-                pdf.multi_cell(0, 7, f"  • {clean_line[2:]}")
+                _safe_multi_cell(pdf, eff_w, 7, f"  • {clean_line[2:]}")
             else:
                 pdf.set_font("Helvetica", "", 11)
                 pdf.set_text_color(*_TEXT)
-                pdf.multi_cell(0, 7, clean_line)
+                _safe_multi_cell(pdf, eff_w, 7, clean_line)
 
         await asyncio.to_thread(pdf.output, filepath)
         
