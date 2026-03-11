@@ -179,7 +179,15 @@ async def supervisor_node(state: AgentState):
         if specialist_runs.get("arth_analyst", 0) == 0: return {"next_agent": "arth_analyst"}
         if specialist_runs.get("arth_executor", 0) == 0: return {"next_agent": "arth_executor"}
 
-    return {"next_agent": routing_result.next_agent}
+    ret = {"next_agent": routing_result.next_agent}
+    
+    # FIX: Se a jornada acabou e há uma resposta final (ex: saudação, conversa normal),
+    # precisamos devolvê-la para o estado sob o nome do orchestrator.
+    if routing_result.next_agent == "FINISH" and routing_result.final_answer:
+        msg = AIMessage(content=routing_result.final_answer, name="arth_orchestrator")
+        ret["messages"] = [msg]
+
+    return ret
 
 def build_arth_graph():
     workflow = StateGraph(AgentState)
