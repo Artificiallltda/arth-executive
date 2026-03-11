@@ -98,33 +98,21 @@ async def agent_node(state, agent, name):
     tool_text = " ".join(str(m.content) for m in tool_messages)
     file_tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):([^>]+)>', tool_text)
     
-    # --- ENTREGA IMEDIATA BLINDADA ---
-    # Garantimos que o arquivo seja enviado assim que gerado, mas apenas UMA vez.
-    delivered_now = []
-    if file_tags and user_id and channel == "telegram":
-        from src.router.adapters.telegram import safe_send_file
-        already_delivered = state.get("delivered_files", []) or []
-        for tag in file_tags:
-            filename = tag.strip()
-            if filename not in already_delivered:
-                full_path = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
-                if await wait_for_file(full_path):
-                    await safe_send_file(user_id, full_path)
-                    delivered_now.append(filename)
-
     # Injeta as tags na mensagem para o estado saber
     msg_content = msg.content
     for tag in file_tags:
         t_str = f"<SEND_FILE:{tag}>"
         if t_str not in msg_content: msg_content += f"\n{t_str}"
-    msg = msg.model_copy(update={"content": msg_content})
+        
+    # FIX: Ensure the correct agent name is attached to the AIMessage 
+    # so the supervisor can properly count it and break loops.
+    msg = msg.model_copy(update={"content": msg_content, "name": name})
 
     return {
         "messages": [msg],
         "sender": name,
         "content": state.get("content", ""),
-        "user_input": state.get("user_input", ""),
-        "delivered_files": list(state.get("delivered_files", []) or []) + delivered_now
+        "user_input": state.get("user_input", "")
     }
 
 async def researcher_node(state): 
