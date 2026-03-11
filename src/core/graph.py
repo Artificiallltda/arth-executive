@@ -351,19 +351,23 @@ async def supervisor_node(state: AgentState):
     last_human_idx = max((i for i, m in enumerate(messages) if m.type == "human"), default=0)
     msgs_this_turn = messages[last_human_idx + 1:]
 
-    # Conta execuções por especialista neste turno — previne loop infinito.
+    # Conta execuções por especialista neste turno — previne loop infinito e duplicidade.
     specialist_runs: dict = {}
     for m in msgs_this_turn:
         if m.type == "ai" and getattr(m, "name", "") in members:
-            specialist_runs[m.name] = specialist_runs.get(m.name, 0) + 1
+            name = getattr(m, "name", "")
+            specialist_runs[name] = specialist_runs.get(name, 0) + 1
+            
+            # --- TRAVA DE DUPLICIDADE ORION ---
+            # Se qualquer agente já gerou um arquivo (<SEND_FILE:), FORÇA o encerramento.
+            # Isso impede que o Executor gere 5 imagens ou 4 PDFs em sequência.
             if any(tag in str(m.content) for tag in ["<SEND_FILE:", "<SEND_AUDIO:"]):
-                logger.info(f"[Supervisor] Arquivo já gerado por {m.name}, encerrando rodada.")
+                logger.info(f"[Supervisor] 🛑 Arquivo já detectado na mensagem de {name}. Encerrando turno para evitar duplicatas.")
                 return {"next_agent": "FINISH"}
 
-    # Se qualquer especialista já rodou 2+ vezes sem entregar arquivo → força FINISH
+    # Se qualquer especialista já rodou 2+ vezes (mesmo sem arquivo) → força FINISH
     if any(count >= 2 for count in specialist_runs.values()):
-        repeat_info = {k: v for k, v in specialist_runs.items() if v >= 2}
-        logger.warning(f"[Supervisor] Loop detectado {repeat_info}. Forçando FINISH.")
+        logger.warning(f"[Supervisor] Limite de tentativas atingido. Forçando FINISH.")
         return {"next_agent": "FINISH"}
 
     # --- TRUNFAMENTO DE CONTEXTO (PREVENÇÃO DE ERRO 429 TPM) ---
@@ -451,35 +455,8 @@ async def supervisor_node(state: AgentState):
                 return {"next_agent": correct_retry_agent}
 
     # --- SUPORTE A ENTREGA PROATIVA BLINDADA (ESCANER TOTAL DE TURNO) ---
+    # Removido para evitar duplicidade. A entrega agora é 100% imediata via agent_node.
     if routing_result.next_agent == "FINISH":
-        from src.router.adapters.telegram import safe_send_file
-        chat_id = state.get("user_id")
-        
-        # Escaneia todas as mensagens desde o último input humano (turno atual)
-        all_tags = []
-        for m in msgs_this_turn:
-            content_str = str(m.content)
-            tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):([^>]+)>', content_str)
-            all_tags.extend(tags)
-        
-        # Remove duplicatas preservando a ordem
-        unique_tags = list(dict.fromkeys(all_tags))
-        
-        if unique_tags and chat_id:
-            logger.info(f"[Supervisor] 📦 DETECTADOS {len(unique_tags)} ARQUIVOS PARA ENTREGA NESTE TURNO.")
-            output_dir = os.path.abspath(settings.DATA_OUTPUTS_PATH)
-            
-            for filename in unique_tags:
-                filename = filename.strip()
-                full_path = os.path.join(output_dir, filename)
-                
-                # ESPERA ATÉ 5 SEGUNDOS PELO ARQUIVO (REDUNDÂNCIA)
-                if await wait_for_file(full_path, max_wait=5.0):
-                    logger.info(f"[Supervisor] 🚀 Disparando entrega de: {filename}")
-                    await safe_send_file(full_path, chat_id)
-                else:
-                    logger.error(f"[Supervisor] ❌ Arquivo não apareceu no disco após espera: {full_path}")
-
         # Lógica de finalização original...
         last_human_idx = max((i for i, m in enumerate(messages) if m.type == "human"), default=0)
         msgs_this_turn = messages[last_human_idx + 1:]
