@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, BackgroundTasks, Query
+from fastapi import APIRouter, Request, BackgroundTasks
 import logging
 import platform
 import asyncio
@@ -22,7 +22,6 @@ logger = logging.getLogger(__name__)
 # Controle de sessão e deduplicação
 _session_counters: dict = {}
 _user_locks: dict = {}
-_RESET_KEYWORDS = {"resetar", "reset", "/reset", "limpar histórico"}
 
 def _get_thread_id(channel: str, user_id: str) -> str:
     key = f"{channel}_{user_id}"
@@ -48,7 +47,7 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
                 "channel": channel,
                 "user_input": text,
                 "content": "",
-                "media_context": media_data.get("b64") if media_data else None,
+                "media_context": media_context if (media_context := (media_data.get("b64") if media_data else None)) else None,
                 "delivered_files": []
             }
 
@@ -61,7 +60,7 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
             }
             
             sent_etas = set()
-            rich_responses = [] # Guardará todas as mensagens AI detalhadas
+            responses_pool = [] 
 
             async for event in brain.astream(initial_state, config=config):
                 for node, state_update in event.items():
@@ -73,23 +72,29 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
                     for m in msgs:
                         if not m.content: continue
                         content_str = str(m.content)
-                        # Se for uma resposta de um especialista (não o orquestrador dando tchau), guardamos
-                        if hasattr(m, "name") and m.name != "arth_orchestrator" and len(content_str) > 20:
-                            rich_responses.append(content_str)
-                        elif not hasattr(m, "name") and len(content_str) > 20:
-                            rich_responses.append(content_str)
+                        # Guardamos mensagens ricas de IA (especialistas)
+                        if hasattr(m, "type") and m.type == "ai" and len(content_str) > 10:
+                            responses_pool.append({"node": node, "text": content_str})
 
-            # Escolhe a resposta mais longa do turno (geralmente a explicação detalhada)
-            if rich_responses:
-                final_text = max(rich_responses, key=len)
+            # --- ESTRATÉGIA DE RESPOSTA ÚNICA ---
+            # Priorizamos mensagens de especialistas (Analyst, Executor, Researcher) sobre o Orchestrator
+            priority_nodes = ["arth_analyst", "arth_executor", "arth_researcher"]
+            final_text = ""
+            
+            # Tenta pegar a mensagem mais longa dos nós prioritários
+            specialist_msgs = [r for r in responses_pool if r["node"] in priority_nodes]
+            if specialist_msgs:
+                final_text = max(specialist_msgs, key=lambda x: len(x["text"]))["text"]
+            elif responses_pool:
+                # Fallback para a maior mensagem qualquer (provavelmente do Orchestrator)
+                final_text = max(responses_pool, key=lambda x: len(x["text"]))["text"]
             else:
-                final_text = "Tarefa concluída com sucesso. O material solicitado foi entregue."
+                final_text = "Tarefa processada com sucesso."
 
-            # Limpa tags para o texto final ficar elegante
+            # Limpa tags para a explicação ficar elegante
             clean_response = re.sub(r'<(?:SEND_FILE|SEND_AUDIO):[^>]+>', '', final_text).strip()
             
-            # Envia a EXPLICAÇÃO PREMIUM
-            if clean_response:
+            if clean_response and clean_response.lower() != "tarefa concluída":
                 if channel == "telegram":
                     await send_telegram_message(user_id, clean_response)
                 elif channel == "whatsapp":
@@ -99,6 +104,8 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
 
         except Exception as e:
             logger.error(f"Erro no execute_brain: {e}", exc_info=True)
+            if "RESOURCE_EXHAUSTED" in str(e):
+                return "Desculpe, atingi o limite de processamento temporário da API. Por favor, tente novamente em 30 segundos. ⏳"
             return f"Ops, falha técnica: {str(e)}"
 
 @router.post("/telegram/webhook")
@@ -109,7 +116,7 @@ async def receive_telegram(request: Request, background_tasks: BackgroundTasks):
     chat_id = str(msg.get("chat", {}).get("id", ""))
     user_name = msg.get("from", {}).get("first_name", "User")
     text = msg.get("text", "") or msg.get("caption", "")
-    if not chat_id or not text: return {"status": "ignored"}
+    if not chat_id: return {"status": "ignored"}
     async def status_callback(m: str): await send_telegram_message(chat_id, f"<i>{m}</i>")
     async def run_pipeline():
         await execute_brain(user_id=chat_id, text=text, channel="telegram", status_callback=status_callback, user_name=user_name)

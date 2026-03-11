@@ -291,21 +291,21 @@ async def generate_pdf(title: str, content: str) -> str:
             if stripped.startswith('# ') and not stripped.startswith('## '):
                 pdf.set_font("Helvetica", "B", 16)
                 pdf.set_text_color(*_AZUL_CORP)
-                pdf.multi_cell(eff_w, 10, clean_line[2:].replace("**", ""))
+                pdf.multi_cell(0, 10, clean_line[2:].replace("**", ""))
                 pdf.ln(2)
             elif stripped.startswith('## '):
                 pdf.set_font("Helvetica", "B", 14)
                 pdf.set_text_color(*_AZUL_CORP)
-                pdf.multi_cell(eff_w, 9, clean_line[3:].replace("**", ""))
+                pdf.multi_cell(0, 9, clean_line[3:].replace("**", ""))
                 pdf.ln(1)
             elif stripped.startswith('- ') or stripped.startswith('* '):
                 pdf.set_font("Helvetica", "", 11)
                 pdf.set_text_color(*_TEXT)
-                pdf.multi_cell(eff_w, 7, f"  • {clean_line[2:]}")
+                pdf.multi_cell(0, 7, f"  • {clean_line[2:]}")
             else:
                 pdf.set_font("Helvetica", "", 11)
                 pdf.set_text_color(*_TEXT)
-                pdf.multi_cell(eff_w, 7, clean_line)
+                pdf.multi_cell(0, 7, clean_line)
 
         await asyncio.to_thread(pdf.output, filepath)
         

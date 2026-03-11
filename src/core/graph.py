@@ -69,7 +69,8 @@ def load_persona(agent_filename: str) -> str:
 
 def create_specialist_agent(tools, system_prompt: str, model_instance):
     safe_tools = [t for t in tools if t is not None]
-    return create_react_agent(model=model_instance.with_fallbacks([gemini_fallback]), tools=safe_tools, prompt=system_prompt)
+    # Removed gemini_fallback to prevent 8-minute retry loops on 429 errors
+    return create_react_agent(model=model_instance, tools=safe_tools, prompt=system_prompt)
 
 # Agentes
 researcher_agent = create_specialist_agent([search_web, read_url, read_document, search_memory, save_memory, query_knowledge_base], load_persona("researcher.md"), deepseek_llm)
