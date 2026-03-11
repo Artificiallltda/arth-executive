@@ -151,7 +151,7 @@ supervisor_chain = prompt | supervisor_llm.with_structured_output(RouteResponse)
 async def supervisor_node(state: AgentState):
     messages = list(state.get("messages", []))
     
-    # Detecção de loops
+    # Detecção de loops e finalização imediata de mídias
     last_human_idx = max((i for i, m in enumerate(messages) if m.type == "human"), default=0)
     msgs_this_turn = messages[last_human_idx + 1:]
     
@@ -161,12 +161,15 @@ async def supervisor_node(state: AgentState):
         if m.type == "ai" and getattr(m, "name", "") in members:
             name = m.name
             specialist_runs[name] = specialist_runs.get(name, 0) + 1
-            if "<SEND_FILE:" in str(m.content): has_file = True
-
-    # Se já tem arquivo, FINISH obrigatório (evita duplicidade de imagens/pdfs)
-    if has_file:
-        logger.info("[Supervisor] Arquivo detectado. Encerrando turno.")
-        return {"next_agent": "FINISH"}
+            content_str = str(m.content)
+            if "<SEND_FILE:" in content_str: has_file = True
+            
+            # --- BLINDAGEM DE VELOCIDADE ORION ---
+            # Se o Executor já gerou imagem ou áudio, termina NA HORA. 
+            # Não deixa o Analista ou Researcher "meterem a colher".
+            if name == "arth_executor" and any(ext in content_str for ext in [".png", ".jpg", ".mp3", ".wav"]):
+                logger.info("[Supervisor] Imagem/Áudio gerado. Encerrando para velocidade máxima.")
+                return {"next_agent": "FINISH"}
 
     # Se o executor rodou mas não gerou arquivo, e já rodou 2 vezes, para tudo.
     if specialist_runs.get("arth_executor", 0) >= 2:
