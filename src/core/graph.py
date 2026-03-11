@@ -87,7 +87,16 @@ async def agent_node(state, agent, name):
     messages = list(state.get("messages", []))
     user_id = state.get("user_id", "")
     channel = state.get("channel", "")
-    
+    # PROTEÇÃO CONTRA ESTOURO DE CONTEXTO (Max 128k tokens)
+    # Limita o histórico enviado para o agente para as últimas 30 mensagens
+    # para evitar sobrecarregar os modelos (especialmente gpt-4o-mini e deepseek).
+    if len(messages) > 30:
+        # Mantém a SystemMessage (primeira msg) se existir, e pega as últimas 29
+        if messages and getattr(messages[0], "type", "") == "system":
+            messages = [messages[0]] + messages[-29:]
+        else:
+            messages = messages[-30:]
+            
     result = await agent.ainvoke({**state, "messages": messages}, RunnableConfig(recursion_limit=50))
     msg = result["messages"][-1]
 
