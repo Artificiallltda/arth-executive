@@ -8,7 +8,7 @@ def get_current_time(timezone: str = "America/Sao_Paulo") -> str:
     ou para planejar agendamentos.
     """
     import datetime
-    import pytz
-    tz = pytz.timezone(timezone)
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo(timezone)
     now = datetime.datetime.now(tz)
-    return f"A data e hora atual em {timezone} \'E9 {now.strftime('%Y-%m-%d %H:%M:%S')}"
+    return f"A data e hora atual em {timezone} é {now.strftime('%Y-%m-%d %H:%M:%S')}"
