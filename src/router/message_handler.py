@@ -175,7 +175,9 @@ async def receive_telegram(request: Request, background_tasks: BackgroundTasks):
     if not chat_id: return {"status": "ignored"}
     async def status_callback(m: str): await send_telegram_message(chat_id, f"<i>{m}</i>")
     async def run_pipeline():
-        await execute_brain(user_id=chat_id, text=text, channel="telegram", status_callback=status_callback, user_name=user_name)
+        result = await execute_brain(user_id=chat_id, text=text, channel="telegram", status_callback=status_callback, user_name=user_name)
+        if isinstance(result, str):
+            await send_telegram_message(chat_id, result)
     background_tasks.add_task(run_pipeline)
     return {"status": "queued"}
 
