@@ -171,7 +171,13 @@ def _build_content(prs, title, bullets, img_path=None):
 
 
 class PpptxSchema(BaseModel):
-    slides_content_json: Any = Field(..., description="Conteúdo dos slides em JSON ou lista.")
+    slides_content_json: Any = Field(..., description=(
+        "Conteúdo dos slides em formato JSON estruturado. "
+        "Deve conter 'presentation_title' e uma lista 'slides'. "
+        "Cada slide da lista deve ter: 'title' (str) e 'bullets' (lista de str). "
+        "DICA PRO: Para criar PowerPoints Premium, gere imagens antes usando o image_generator e insira a "
+        "tag (ex: <SEND_FILE:img.png>) dentro de um dos bullets ou no campo 'img_path' do slide."
+    ))
 
 @tool(args_schema=PpptxSchema)
 async def generate_pptx(slides_content_json: Any) -> str:

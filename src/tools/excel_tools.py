@@ -57,6 +57,57 @@ def _clean_data(raw_data: Any) -> List[Dict[str, Any]]:
         
     return cleaned
 
+def _apply_premium_style(file_path: str):
+    """Aplica o design corporativo premium (Manus AI) à planilha gerada."""
+    try:
+        from openpyxl import load_workbook
+        from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+
+        wb = load_workbook(file_path)
+        
+        # Paleta Corporativa Premium Executiva
+        header_fill = PatternFill(start_color="1C4E9E", end_color="1C4E9E", fill_type="solid") # Azul Corporativo
+        header_font = Font(color="FFFFFF", bold=True, name="Calibri", size=12)
+        cell_font = Font(name="Calibri", size=11, color="333333")
+        thin_border = Border(
+            left=Side(style='thin', color='D3D3D3'), 
+            right=Side(style='thin', color='D3D3D3'), 
+            top=Side(style='thin', color='D3D3D3'), 
+            bottom=Side(style='thin', color='D3D3D3')
+        )
+        
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            
+            # Formatar Cabeçalhos
+            for col in range(1, ws.max_column + 1):
+                cell = ws.cell(row=1, column=col)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.border = thin_border
+            
+            # Formatar Células e Ajustar Largura
+            for col in range(1, ws.max_column + 1):
+                max_len = len(str(ws.cell(row=1, column=col).value or ""))
+                for row in range(2, ws.max_row + 1):
+                    c = ws.cell(row=row, column=col)
+                    c.font = cell_font
+                    c.border = thin_border
+                    c.alignment = Alignment(vertical="center")
+                    if c.value:
+                        max_len = max(max_len, len(str(c.value)))
+                
+                # Ajuste inteligente de largura de coluna
+                adjusted_width = min(max_len + 5, 60)
+                ws.column_dimensions[get_column_letter(col)].width = adjusted_width
+
+        wb.save(file_path)
+        logger.info(f"✨ [ExcelGen] Formatação Executiva aplicada com sucesso em: {file_path}")
+    except Exception as e:
+        logger.warning(f"⚠️ [ExcelGen] Falhou ao aplicar formatação premium em {file_path}: {e}")
+
 @tool(args_schema=ReadExcelSchema)
 async def read_excel(file_path: str, sheet_name: Union[str, int] = 0) -> List[Dict[str, Any]]:
     """
@@ -109,6 +160,7 @@ async def create_excel(data: list, file_path: str, sheet_name: str = "Sheet1") -
             logger.info("[ExcelGen] Tentando via PANDAS...")
             df = pd.DataFrame(clean_data)
             await asyncio.to_thread(df.to_excel, full_path, index=False, sheet_name=sheet_name)
+            await asyncio.to_thread(_apply_premium_style, full_path)
             logger.info(f"✅ [ExcelGen] Sucesso via PANDAS: {full_path}")
             size = os.path.getsize(full_path)
             return f"Planilha '{file_path}' gerada com sucesso ({size} bytes). <SEND_FILE:{os.path.basename(full_path)}>"
@@ -128,6 +180,7 @@ async def create_excel(data: list, file_path: str, sheet_name: str = "Sheet1") -
                     ws.append([row.get(h, "") for h in headers])
             
             await asyncio.to_thread(wb.save, full_path)
+            await asyncio.to_thread(_apply_premium_style, full_path)
             logger.info(f"✅ [ExcelGen] Sucesso via FALLBACK OpenPyXL: {full_path}")
             return f"Planilha '{file_path}' criada via fallback seguro com {len(clean_data)} linhas. <SEND_FILE:{os.path.basename(full_path)}>"
             
