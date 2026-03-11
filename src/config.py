@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     
     # --- DATABASE (SUPABASE/POSTGRES) ---
     SUPABASE_DATABASE_URL: str = ""
+    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+    SUPABASE_SERVICE_KEY: str = os.getenv("SUPABASE_SERVICE_KEY", "")
     
     class Config:
         env_file = ".env"

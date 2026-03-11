@@ -13,6 +13,16 @@ from src.core.engine import engine
 from src.router.adapters.whatsapp import process_whatsapp_reply, send_whatsapp_message
 from src.router.adapters.telegram import process_telegram_reply, send_telegram_message, safe_send_file
 
+try:
+    from supabase import create_client, Client
+except ImportError:
+    create_client = None
+
+try:
+    from supabase import create_client, Client
+except ImportError:
+    create_client = None
+
 if platform.system() == "Windows":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -199,20 +209,37 @@ async def receive_generator_leads(request: Request, background_tasks: Background
         logger.info(f"Received {len(leads)} leads from {source}")
 
         # The leads will need to be processed and inserted into Supabase.
-        # For now, we kick off an execution pipeline or handle insertion logic
-        async def process_leads_workflow():
-            # In a real integration, we might call a specific tool or Supabase client here.
-            # As a placeholder, we use execute_brain to notify the SDR agent of the new batch.
-            prompt = f"O Gerador de Leads acabou de enviar um novo lote de {len(leads)} leads extraídos da fonte {source}. Por favor, analise a lista e classifique-os no banco de dados Supabase. Abaixo estão os dados em JSON:\n\n{leads}"
-            # Sending to a system/admin thread
-            await execute_brain(user_id="system_admin", text=prompt, channel="internal", user_name="LeadGenerator")
+        def process_and_insert_leads():
+            if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_KEY or not create_client:
+                logger.error("Supabase credentials missing.")
+                return
 
-        background_tasks.add_task(process_leads_workflow)
+            try:
+                supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
+                
+                for lead in leads:
+                    db_lead = {
+                        "company_name": str(lead.get("nome", "N/A")),
+                        "status": "Scraping / Identified",
+                        "source": str(source),
+                        "website": str(lead.get("site", "")),
+                        "phone": str(lead.get("telefone", "")),
+                        "email": str(lead.get("email", "")),
+                        "address": str(lead.get("endereco", "")),
+                        "rating": str(lead.get("rating", "0.0")),
+                        "raw_data": lead
+                    }
+                    supabase.table("leads").insert(db_lead).execute()
+                    
+            except Exception as e:
+                logger.error(f"Erro no background Supabase: {e}")
+
+        background_tasks.add_task(process_and_insert_leads)
         
         # Returning success counts
         return {
             "status": "success", 
-            "message": "Leads received and queued for processing",
+            "message": "Leads queued for Supabase insertion",
             "criados": len(leads),
             "erros": 0
         }

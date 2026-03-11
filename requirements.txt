@@ -29,3 +29,5 @@ openpyxl>=3.1.0
 numpy>=1.26.0
 tavily-python>=0.3.3
 pymupdf>=1.23.0
+
+supabase>=2.3.0
