@@ -100,11 +100,12 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
             # Limpa tags para a explicação ficar elegante
             clean_response = re.sub(r'<(?:SEND_FILE|SEND_AUDIO):[^>]+>', '', final_text).strip()
             
-            # Fallback Premium Manus AI caso a LLM tenha retornado só a tag do arquivo
-            if unique_files and not clean_response:
+            # Fallback Premium Manus AI caso a LLM tenha retornado só a tag do arquivo (ou caído no default)
+            is_empty_or_default = not clean_response or clean_response.lower() == "tarefa processada com sucesso."
+            if unique_files and is_empty_or_default:
                 clean_response = (
-                    "✨ **O material solicitado foi gerado com sucesso.**\n\n"
-                    "O conteúdo foi estruturado seguindo os padrões de excelência executiva do *Manus AI*. "
+                    "✨ **O material solicitado foi gerado com precisão executiva.**\n\n"
+                    "O conteúdo foi estruturado seguindo os mais altos padrões de design do *Manus AI*. "
                     "O arquivo está sendo enviado abaixo para visualização imediata. 👑"
                 )
 
