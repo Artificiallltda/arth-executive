@@ -168,18 +168,8 @@ async def generate_docx(title: str = "Documento", content: str = "", filename: O
             # LINHA HORIZONTAL
             doc.add_paragraph('_' * 50)
             
-            # CONTEÚDO
-            if isinstance(content, str):
-                paragraphs = content.split('\n')
-                for para in paragraphs:
-                    if para.strip():
-                        p = doc.add_paragraph()
-                        p.add_run(para.strip())
-                        p.paragraph_format.space_after = Pt(12)
-            else:
-                p = doc.add_paragraph()
-                p.add_run(str(content))
-                p.paragraph_format.space_after = Pt(12)
+            # CONTEÚDO COM ESTILO CORPORATIVO PREMIUM
+            _parse_markdown_to_docx(doc, str(content))
             
             # RODAPÉ
             doc.add_paragraph('_' * 50)
@@ -319,7 +309,12 @@ async def generate_pdf(title: str, content: str) -> str:
             else:
                 pdf.set_font("Helvetica", "", 11)
                 pdf.set_text_color(*_TEXT)
+                # Formata texto em negrito básico para PDF simples
+                if "**" in clean_line:
+                    clean_line = clean_line.replace("**", "")
+                    pdf.set_font("Helvetica", "B", 11)
                 _safe_multi_cell(pdf, eff_w, 7, clean_line)
+                pdf.ln(3) # Espaçamento elegante entre parágrafos
 
         await asyncio.to_thread(pdf.output, filepath)
         
