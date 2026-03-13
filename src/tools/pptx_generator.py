@@ -122,13 +122,30 @@ class PpptxSchema(BaseModel):
     template_name: Optional[str] = Field(None, description="Nome do template na biblioteca (ex: 'vendas', 'investidores').")
 
 def _get_template_path(template_name: str = None):
+    """Busca um template específico ou escolhe um automaticamente da biblioteca."""
+    import random
     base_path = os.path.join(settings.BASE_DIR, "data", "templates", "pptx")
+    
+    if not os.path.exists(base_path):
+        os.makedirs(base_path, exist_ok=True)
+        return None
+
     if template_name:
         clean_name = template_name.replace(".pptx", "")
         specific_path = os.path.join(base_path, f"{clean_name}.pptx")
         if os.path.exists(specific_path): return specific_path
-    default_path = os.path.join(base_path, "template.pptx")
-    return default_path if os.path.exists(default_path) else None
+
+    # Seleção Automática (Público)
+    templates = [f for f in os.listdir(base_path) if f.endswith(".pptx")]
+    if not templates: return None
+
+    # Tenta o mestre primeiro, senão vai no aleatório
+    if "template.pptx" in templates:
+        return os.path.join(base_path, "template.pptx")
+    
+    chosen = random.choice(templates)
+    logger.info(f"[PPTXGen] 🎲 Template automático para o público: {chosen}")
+    return os.path.join(base_path, chosen)
 
 @tool(args_schema=PpptxSchema)
 async def generate_pptx(slides_content_json: Any, template_name: str = None) -> str:
