@@ -9,8 +9,8 @@ logging.basicConfig(level=logging.INFO)
 # Adiciona o diretório atual ao sys.path para importar os módulos locais
 sys.path.append(os.getcwd())
 
-from src.router.message_handler import execute_brain
-from src.config import settings
+from router.message_handler import execute_brain
+from config import settings
 
 async def main():
     print("\n🚀 INICIANDO TESTE DE GERAÇÃO MÚLTIPLA (DOCX + PDF)...")

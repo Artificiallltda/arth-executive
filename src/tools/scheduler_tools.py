@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from langchain_core.tools import tool
-from src.scheduler.reminder_worker import schedule_new_reminder
+from scheduler.reminder_worker import schedule_new_reminder
 
 @tool
 def schedule_reminder(user_id: str, channel: str, target_datetime_iso: str, message_to_remind: str) -> str:

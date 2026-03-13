@@ -7,7 +7,7 @@ from pathlib import Path
 # Adiciona o diretório raiz ao PYTHONPATH para os imports do src funcionarem no teste
 sys.path.append(str(Path(__file__).parent.parent))
 
-from src.config import settings
+from config import settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ async def test_all_generators():
     
     # --- 1. PDF ---
     try:
-        from src.tools.doc_generator import generate_pdf
+        from tools.doc_generator import generate_pdf
         logger.info("[TEST] Iniciando teste PDF...")
         # A tool wrapper exige um dicionário {"title": ..., "content": ...} quando chamada diretamente via invoke/ainvoke
         result = await generate_pdf.ainvoke({"title": "Teste PDF", "content": "# Teste\nConteúdo do PDF"})
@@ -37,7 +37,7 @@ async def test_all_generators():
     
     # --- 2. DOCX ---
     try:
-        from src.tools.doc_generator import generate_docx
+        from tools.doc_generator import generate_docx
         logger.info("[TEST] Iniciando teste DOCX...")
         result = await generate_docx.ainvoke({"title": "Teste DOCX", "content": "# Teste\nConteúdo do DOCX"})
         match = re.search(r'<SEND_FILE:([^>]+)>', result)
@@ -50,7 +50,7 @@ async def test_all_generators():
     
     # --- 3. PPTX ---
     try:
-        from src.tools.pptx_generator import generate_pptx
+        from tools.pptx_generator import generate_pptx
         import json
         logger.info("[TEST] Iniciando teste PPTX...")
         payload = json.dumps({
@@ -68,7 +68,7 @@ async def test_all_generators():
     
     # --- 4. Excel ---
     try:
-        from src.tools.excel_tools import create_excel
+        from tools.excel_tools import create_excel
         logger.info("[TEST] Iniciando teste Excel...")
         result = await create_excel.ainvoke({"data": [{"colA": 1, "colB": 2}], "file_path": "planilha_teste.xlsx"})
         match = re.search(r'<SEND_FILE:([^>]+)>', result)

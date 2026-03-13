@@ -8,7 +8,7 @@ import re
 logging.basicConfig(level=logging.INFO)
 sys.path.append(os.getcwd())
 
-from src.router.message_handler import execute_brain
+from router.message_handler import execute_brain
 
 async def main():
     print("\n🚀 INICIANDO TESTE DE FLUXO PPTX + IMAGENS...")

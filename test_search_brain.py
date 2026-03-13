@@ -6,7 +6,7 @@ import logging
 # Adiciona o diretório atual ao sys.path
 sys.path.append(os.getcwd())
 
-from src.router.message_handler import execute_brain
+from router.message_handler import execute_brain
 
 async def main():
     logging.basicConfig(level=logging.INFO)

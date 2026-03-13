@@ -6,7 +6,7 @@ import io
 if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-from src.router.message_handler import execute_brain
+from router.message_handler import execute_brain
 
 async def status_callback(msg: str):
     print(f">> ETA STATUS: {msg}")

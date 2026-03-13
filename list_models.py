@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from google import genai
-from src.config import settings
+from config import settings
 
 load_dotenv()
 

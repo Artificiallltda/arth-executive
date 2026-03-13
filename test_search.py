@@ -6,7 +6,7 @@ import logging
 # Adiciona o diretório atual ao sys.path
 sys.path.append(os.getcwd())
 
-from src.tools.web_search import search_web
+from tools.web_search import search_web
 
 async def main():
     logging.basicConfig(level=logging.INFO)

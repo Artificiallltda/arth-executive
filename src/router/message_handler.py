@@ -6,22 +6,12 @@ import re
 import hashlib
 import os
 import uuid
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AIMessage
 
 from src.config import settings
 from src.core.engine import engine
-from src.router.adapters.whatsapp import process_whatsapp_reply, send_whatsapp_message
-from src.router.adapters.telegram import process_telegram_reply, send_telegram_message, safe_send_file
-
-try:
-    from supabase import create_client, Client
-except ImportError:
-    create_client = None
-
-try:
-    from supabase import create_client, Client
-except ImportError:
-    create_client = None
+from router.adapters.whatsapp import process_whatsapp_reply, send_whatsapp_message
+from router.adapters.telegram import process_telegram_reply, send_telegram_message, safe_send_file
 
 if platform.system() == "Windows":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -57,7 +47,7 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
                 "channel": channel,
                 "user_input": text,
                 "content": "",
-                "media_context": media_context if (media_context := (media_data.get("b64") if media_data else None)) else None,
+                "media_context": (media_data.get("b64") if media_data else None),
                 "delivered_files": []
             }
 
@@ -82,65 +72,37 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
                     for m in msgs:
                         if not m.content: continue
                         content_str = str(m.content)
-                        # Guardamos mensagens ricas de IA (especialistas)
                         if hasattr(m, "type") and m.type == "ai" and len(content_str) > 10:
                             responses_pool.append({"node": node, "text": content_str})
 
-            # --- ESTRATÉGIA DE RESPOSTA ÚNICA ---
-            # Priorizamos mensagens de especialistas (Analyst, Executor, Researcher) sobre o Orchestrator
             priority_nodes = ["arth_analyst", "arth_executor", "arth_researcher"]
             final_text = ""
             
-            # Tenta pegar a mensagem mais longa dos nós prioritários
             specialist_msgs = [r for r in responses_pool if r["node"] in priority_nodes]
             if specialist_msgs:
                 final_text = max(specialist_msgs, key=lambda x: len(x["text"]))["text"]
             elif responses_pool:
-                # Fallback para a maior mensagem qualquer (provavelmente do Orchestrator)
                 final_text = max(responses_pool, key=lambda x: len(x["text"]))["text"]
             else:
                 final_text = "Tarefa processada com sucesso."
 
-            # --- ENVIO DE TEXTO E MÍDIA ---
-            # Extrair todas as tags de arquivo de todas as mensagens geradas pelas IAs neste turno
             all_ai_text = " ".join([r["text"] for r in responses_pool])
             file_tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):([^>]+)>', all_ai_text)
             unique_files = list(dict.fromkeys([t.strip() for t in file_tags]))
 
-            # Limpa tags para a explicação ficar elegante
             clean_response = re.sub(r'<(?:SEND_FILE|SEND_AUDIO):[^>]+>', '', final_text).strip()
             
-            # Fallback Premium Manus AI dinâmico baseado no tipo de arquivo
             is_weak_text = not clean_response or len(clean_response) < 40 or "tarefa" in clean_response.lower() or "sucesso" in clean_response.lower()
             if unique_files and is_weak_text:
                 first_file = unique_files[0].lower()
-                
                 if first_file.endswith('.png') or first_file.endswith('.jpg'):
-                    clean_response = (
-                        "📸 **Imagem Gerada com Sucesso**\n\n"
-                        "Foi aplicada uma direção de arte de alto padrão para traduzir a sua solicitação em uma composição visual única. "
-                        "Confira o resultado abaixo. 👑"
-                    )
+                    clean_response = "📸 **Imagem Gerada com Sucesso**\n\nConfira o resultado abaixo. 👑"
                 elif first_file.endswith('.pdf'):
-                    clean_response = (
-                        "📄 **Pesquisa & Relatório Executivo**\n\n"
-                        "Consolidei as informações solicitadas em um relatório blindado com design editorial *Manus AI*. "
-                        "O documento está formatado e pronto para leitura ou encaminhamento estratégico. 👑"
-                    )
-                elif first_file.endswith('.docx'):
-                    clean_response = (
-                        "📝 **Documento Word Estruturado**\n\n"
-                        "O texto foi elaborado com precisão corporativa e organizado com estilos e tipografia da paleta Executiva. "
-                        "O arquivo aberto já está à sua disposição abaixo. 👑"
-                    )
+                    clean_response = "📄 **Relatório Executivo**\n\nO documento está pronto para leitura abaixo. 👑"
                 else:
-                    clean_response = (
-                        "✨ **Material Gerado com Precisão**\n\n"
-                        "O conteúdo foi estruturado seguindo os mais altos padrões de entrega do *Manus AI*. "
-                        "O arquivo está sendo enviado abaixo para utilização imediata. 👑"
-                    )
+                    clean_response = "✨ **Material Gerado com Precisão**\n\nO arquivo está sendo enviado abaixo. 👑"
 
-            if clean_response and clean_response.lower() != "tarefa concluída":
+            if clean_response:
                 if channel == "telegram":
                     await send_telegram_message(user_id, clean_response)
                 elif channel == "whatsapp":
@@ -148,8 +110,6 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
             
             for filename in unique_files:
                 full_path = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
-                
-                # Aguardar o arquivo ser gravado no disco (timeout 15s)
                 import time
                 start_wait = time.time()
                 file_ready = False
@@ -163,15 +123,13 @@ async def execute_brain(user_id: str, text: str, channel: str = "whatsapp", stat
                     if channel == "telegram":
                         await safe_send_file(user_id, full_path)
                     elif channel == "whatsapp":
-                        from src.router.adapters.whatsapp import safe_send_whatsapp_file
+                        from router.adapters.whatsapp import safe_send_whatsapp_file
                         await safe_send_whatsapp_file(user_id, full_path)
 
             return None 
 
         except Exception as e:
             logger.error(f"Erro no execute_brain: {e}", exc_info=True)
-            if "RESOURCE_EXHAUSTED" in str(e):
-                return "Desculpe, atingi o limite de processamento temporário da API. Por favor, tente novamente em 30 segundos. ⏳"
             return f"Ops, falha técnica: {str(e)}"
 
 @router.post("/telegram/webhook")
@@ -190,60 +148,3 @@ async def receive_telegram(request: Request, background_tasks: BackgroundTasks):
             await send_telegram_message(chat_id, result)
     background_tasks.add_task(run_pipeline)
     return {"status": "queued"}
-
-@router.post("/webhook/leads")
-async def receive_generator_leads(request: Request, background_tasks: BackgroundTasks):
-    """
-    Receives JSON payloads directly from the local Leads Generator.
-    Since we are replacing Pipedrive, this endpoint will take the leads
-    and send them to an AI Engine processing pipeline or directly to Supabase.
-    """
-    try:
-        body = await request.json()
-        leads = body.get("leads", [])
-        source = body.get("source", "gerador_local")
-
-        if not leads:
-            return {"status": "ignored", "message": "No leads provided"}
-
-        logger.info(f"Received {len(leads)} leads from {source}")
-
-        # The leads will need to be processed and inserted into Supabase.
-        def process_and_insert_leads():
-            if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_KEY or not create_client:
-                logger.error("Supabase credentials missing.")
-                return
-
-            try:
-                supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
-                
-                for lead in leads:
-                    db_lead = {
-                        "company_name": str(lead.get("nome", "N/A")),
-                        "status": "Scraping / Identified",
-                        "source": str(source),
-                        "website": str(lead.get("site", "")),
-                        "phone": str(lead.get("telefone", "")),
-                        "email": str(lead.get("email", "")),
-                        "address": str(lead.get("endereco", "")),
-                        "rating": str(lead.get("rating", "0.0")),
-                        "raw_data": lead
-                    }
-                    supabase.table("leads").insert(db_lead).execute()
-                    
-            except Exception as e:
-                logger.error(f"Erro no background Supabase: {e}")
-
-        background_tasks.add_task(process_and_insert_leads)
-        
-        # Returning success counts
-        return {
-            "status": "success", 
-            "message": "Leads queued for Supabase insertion",
-            "criados": len(leads),
-            "erros": 0
-        }
-
-    except Exception as e:
-        logger.error(f"Erro ao processar lote de leads: {e}", exc_info=True)
-        return {"status": "error", "error": str(e)}

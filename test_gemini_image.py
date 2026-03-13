@@ -5,8 +5,8 @@ from dotenv import load_dotenv
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from src.tools.image_generator import generate_image
-from src.config import settings
+from tools.image_generator import generate_image
+from config import settings
 
 load_dotenv()
 
