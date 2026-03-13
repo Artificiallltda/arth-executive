@@ -1,5 +1,5 @@
 # 🛡️ SKILL BLINDADA (12/03/2026) - AUDITORIA ORION
-# Esta skill foi atualizada para suportar TEMPLATES PPTX e isolamento de projeto.
+# Esta skill foi atualizada para suportar BIBLIOTECA DE TEMPLATES PPTX e isolamento de projeto.
 import os
 import json
 import uuid
@@ -13,7 +13,7 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from src.config import settings
 from src.tools.image_generator import generate_image
-from typing import Any, Union
+from typing import Any, Optional, Union
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,6 @@ def _build_content(prs, title, bullets, img_path=None):
 
     has_image = False
     if img_path:
-        # Lógica de localização de imagem permanece robusta
         clean_name = str(img_path)
         tag_match = re.search(r'<SEND_FILE:([^>]+)>', clean_name)
         if tag_match: clean_name = tag_match.group(1).strip()
@@ -120,14 +119,20 @@ def _build_content(prs, title, bullets, img_path=None):
 
 class PpptxSchema(BaseModel):
     slides_content_json: Any = Field(..., description="Conteúdo dos slides em JSON.")
+    template_name: Optional[str] = Field(None, description="Nome do template na biblioteca (ex: 'vendas', 'investidores').")
 
-def _get_template_path():
-    path = os.path.join(settings.BASE_DIR, "data", "templates", "pptx", "template.pptx")
-    return path if os.path.exists(path) else None
+def _get_template_path(template_name: str = None):
+    base_path = os.path.join(settings.BASE_DIR, "data", "templates", "pptx")
+    if template_name:
+        clean_name = template_name.replace(".pptx", "")
+        specific_path = os.path.join(base_path, f"{clean_name}.pptx")
+        if os.path.exists(specific_path): return specific_path
+    default_path = os.path.join(base_path, "template.pptx")
+    return default_path if os.path.exists(default_path) else None
 
 @tool(args_schema=PpptxSchema)
-async def generate_pptx(slides_content_json: Any) -> str:
-    """Gera PPTX Premium com suporte a TEMPLATES."""
+async def generate_pptx(slides_content_json: Any, template_name: str = None) -> str:
+    """Gera PPTX Premium com suporte a BIBLIOTECA DE TEMPLATES."""
     if slides_content_json is None:
         slides_content_json = {"title": "Apresentação", "slides": [{"title": "Aviso", "bullets": ["Sem conteúdo."]}]}
 
@@ -149,7 +154,7 @@ async def generate_pptx(slides_content_json: Any) -> str:
             slides_data = [{"title": "Ponto", "bullets": [str(i)]} for i in slides_content_json]
 
         # Geração
-        template_path = _get_template_path()
+        template_path = _get_template_path(template_name)
         if template_path:
             logger.info(f"[PPTXGen] 📂 Usando template: {template_path}")
             prs = Presentation(template_path)
