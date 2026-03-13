@@ -61,11 +61,44 @@ gemini_fallback = ChatGoogleGenerativeAI(model=settings.GEMINI_MODEL, google_api
 
 def load_persona(agent_filename: str) -> str:
     path = os.path.join(settings.SQUAD_PATH, agent_filename)
-    try:
-        with open(path, "r", encoding="utf-8") as f:
+    persona = ""
+
+    def _read_file_safe(file_path):
+        for enc in ['utf-8', 'latin-1', 'cp1252']:
+            try:
+                with open(file_path, "r", encoding=enc) as f:
+                    return f.read()
+            except:
+                continue
+        with open(file_path, "r", encoding='utf-8', errors='replace') as f:
             return f.read()
-    except FileNotFoundError:
-        return f"Você é o agente {agent_filename}."
+
+    try:
+        if os.path.exists(path):
+            persona = _read_file_safe(path)
+        else:
+            persona = f"Você é o agente {agent_filename}."
+    except Exception as e:
+        logger.error(f"[CORE] Erro ao ler persona {agent_filename}: {e}")
+        persona = f"Você é o agente {agent_filename}."
+
+    # --- INJEÇÃO DE MEMÓRIA COMPARTILHADA (Dossiê de Reputação) ---
+    # Busca o dossiê na pasta de dados do squad
+    shared_memory_path = os.path.join(settings.BASE_DIR, "data", "ai-reputation-dossier.md")
+    shared_content = ""
+    if os.path.exists(shared_memory_path):
+        try:
+            shared_content = _read_file_safe(shared_memory_path)
+        except Exception as e:
+            logger.error(f"[CORE] Erro ao ler dossiê de reputação: {e}")
+
+    if shared_content:
+        # Garante que o dossiê não exceda um limite seguro de context window
+        safe_shared = shared_content[:25000] 
+        return f"{persona}\n\n### CONTEXTO DA MARCA (MEMÓRIA COMPARTILHADA):\n{safe_shared}"
+
+    return persona
+
 
 def create_specialist_agent(tools, system_prompt: str, model_instance):
     safe_tools = [t for t in tools if t is not None]
