@@ -1,11 +1,11 @@
-# 🛡️ SKILL BLINDADA (12/03/2026) - AUDITORIA ORION
-# Esta skill foi atualizada para suportar BIBLIOTECA DE TEMPLATES PPTX e isolamento de projeto.
+# 🛡️ SKILL BLINDADA (14/03/2026) - PADRÃO MANUS AI
 import os
 import json
 import uuid
 import logging
 import re
 import asyncio
+import sys
 from langchain_core.tools import tool
 from pptx import Presentation
 from pptx.util import Inches, Pt
@@ -18,16 +18,15 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-# ─── Manus Executive Design System (Fallback) ──────────────────────────────
-_BG     = RGBColor(10,  12,  16)
-_CARD   = RGBColor(28,  33,  40)
-_ACCENT = RGBColor(88, 166, 255)
-_WHITE  = RGBColor(255, 255, 255)
-_TEXT   = RGBColor(230, 237, 243)
-_MUTED  = RGBColor(110, 118, 129)
+# ─── CONFIGURAÇÃO DE CAMINHOS ABSOLUTOS (MANUS STYLE) ───────────────────────
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # src/tools
+PROJECT_ROOT = os.path.dirname(os.path.dirname(BASE_DIR)) # arth-executive
+TEMPLATES_DIR = os.getenv("TEMPLATES_DIR", os.path.join(PROJECT_ROOT, "data", "templates", "pptx"))
 
-_W = Inches(13.333)
-_H = Inches(7.5)
+# ─── Manus Executive Design System (Fallback) ──────────────────────────────
+_BG, _CARD, _ACCENT = RGBColor(10, 12, 16), RGBColor(28, 33, 40), RGBColor(88, 166, 255)
+_WHITE, _TEXT, _MUTED = RGBColor(255, 255, 255), RGBColor(230, 237, 243), RGBColor(110, 118, 129)
+_W, _H = Inches(13.333), Inches(7.5)
 
 def _bg(slide, color=_BG):
     fill = slide.background.fill
@@ -86,173 +85,118 @@ def _build_content(prs, title, bullets, img_path=None):
 
     has_image = False
     if img_path:
-        # Limpeza agressiva do caminho da imagem enviado pela LLM
-        clean_name = str(img_path).strip()
-        # Remove tags caso a LLM tenha enviado <SEND_FILE:img.png>
-        clean_name = re.sub(r'<[^>]+>', '', clean_name)
-        clean_name = clean_name.replace("SEND_FILE:", "").replace("img:", "").strip()
-        
-        # Lista de tentativas de encontrar o arquivo (com hífens, sublinhados, etc.)
-        candidates = [
-            clean_name,
-            clean_name if clean_name.endswith(('.png', '.jpg', '.jpeg')) else f"{clean_name}.png",
-            clean_name.replace("-", "_"),
-            clean_name.replace("_", "-")
-        ]
-        
-        found_path = None
-        for cand in candidates:
-            fp = os.path.join(settings.DATA_OUTPUTS_PATH, cand)
-            if os.path.exists(fp):
-                found_path = fp
-                break
-        
-        if found_path:
+        # Limpeza e busca de imagem
+        clean_name = re.sub(r'<[^>]+>', '', str(img_path)).replace("SEND_FILE:", "").replace("img:", "").strip()
+        fp = os.path.join(settings.DATA_OUTPUTS_PATH, clean_name)
+        if os.path.exists(fp):
             try:
-                # 1. Adiciona a imagem temporariamente em uma área invisível para medir as dimensões reais
-                temp_pic = slide.shapes.add_picture(found_path, 0, 0)
+                temp_pic = slide.shapes.add_picture(fp, 0, 0)
                 orig_w, orig_h = temp_pic.width, temp_pic.height
-                
-                # 2. Calcula o redimensionamento proporcional para a área de 6x5 polegadas
                 max_w, max_h = Inches(6.0), Inches(5.0)
                 scale = min(max_w / orig_w, max_h / orig_h)
-                new_w = int(orig_w * scale)
-                new_h = int(orig_h * scale)
-                
-                # 3. Calcula a posição centralizada na área reservada
-                left = Inches(0.5) + int((max_w - new_w) / 2)
-                top = Inches(1.5) + int((max_h - new_h) / 2)
-                
-                # 4. Remove a imagem temporária (limpando o XML do slide)
+                new_w, new_h = int(orig_w * scale), int(orig_h * scale)
+                left, top = Inches(0.5) + int((max_w - new_w) / 2), Inches(1.5) + int((max_h - new_h) / 2)
                 shape_obj = temp_pic._element
                 shape_obj.getparent().remove(shape_obj)
-                
-                # 5. ADICIONA PRIMEIRO A BORDA (Fica atrás)
                 _rect(slide, left - Pt(2), top - Pt(2), new_w + Pt(4), new_h + Pt(4), _ACCENT)
-                
-                # 6. ADICIONA A IMAGEM POR CIMA
-                slide.shapes.add_picture(found_path, left, top, width=new_w, height=new_h)
-                
+                slide.shapes.add_picture(fp, left, top, width=new_w, height=new_h)
                 has_image = True
-                logger.info(f"[PPTXGen] ✅ Imagem proporcional inserida com sucesso: {found_path}")
-            except Exception as e:
-                logger.error(f"[PPTXGen] ❌ Erro ao processar imagem: {e}")
+            except Exception as e: logger.error(f"[PPTXGen] Erro imagem: {e}")
 
-    txt_l = Inches(7.0) if has_image else Inches(1.0)
-    txt_w = Inches(5.8) if has_image else Inches(11.3)
+    txt_l, txt_w = (Inches(7.0), Inches(5.8)) if has_image else (Inches(1.0), Inches(11.3))
     tb = slide.shapes.add_textbox(txt_l, Inches(1.6), txt_w, Inches(5.3))
     tf = tb.text_frame
     tf.word_wrap = True
     for i, bullet in enumerate(bullets):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.space_before, p.space_after, p.level = Pt(18), Pt(4), 0
-        r = p.add_run()
-        r.text, r.font.bold, r.font.color.rgb = "◈  ", True, _ACCENT
-        r2 = p.add_run()
-        r2.text, r2.font.size, r2.font.color.rgb = str(bullet), Pt(19), _TEXT
+        r = p.add_run(); r.text, r.font.bold, r.font.color.rgb = "◈  ", True, _ACCENT
+        r2 = p.add_run(); r2.text, r2.font.size, r2.font.color.rgb = str(bullet), Pt(19), _TEXT
+
+def _get_template_path(template_name: str = None):
+    """Busca um template de forma ABSOLUTA e INTELIGENTE (Manus AI Pathing)."""
+    logger.info(f"🔍 [PPTXGen] Buscando template para: '{template_name}' em {TEMPLATES_DIR}")
+    
+    if not os.path.exists(TEMPLATES_DIR):
+        logger.warning(f"⚠️ [PPTXGen] Pasta de templates não existe: {TEMPLATES_DIR}")
+        os.makedirs(TEMPLATES_DIR, exist_ok=True)
+        return None
+
+    templates = [f for f in os.listdir(TEMPLATES_DIR) if f.endswith(".pptx")]
+    
+    if template_name:
+        clean_query = str(template_name).lower().replace(".pptx", "").strip()
+        # 1. Nome exato
+        target = f"{clean_query}.pptx"
+        if target in [t.lower() for t in templates]:
+            path = os.path.join(TEMPLATES_DIR, target)
+            logger.info(f"✅ [PPTXGen] Template exato encontrado: {path}")
+            return path
+        
+        # 2. Prefixo template_
+        target_pref = f"template_{clean_query}.pptx"
+        if target_pref in [t.lower() for t in templates]:
+            path = os.path.join(TEMPLATES_DIR, target_pref)
+            logger.info(f"✅ [PPTXGen] Template com prefixo encontrado: {path}")
+            return path
+
+        # 3. Fuzzy Match (contém)
+        for t in templates:
+            if clean_query in t.lower():
+                path = os.path.join(TEMPLATES_DIR, t)
+                logger.info(f"✅ [PPTXGen] Template parcial encontrado: {path}")
+                return path
+
+    # FALLBACK AUTOMÁTICO (MANUS AI)
+    fallback_path = os.path.join(TEMPLATES_DIR, "template_apresentacao.pptx")
+    if os.path.exists(fallback_path):
+        logger.info(f"💡 [PPTXGen] Usando fallback padrão: {fallback_path}")
+        return fallback_path
+    
+    if templates:
+        path = os.path.join(TEMPLATES_DIR, templates[0])
+        logger.info(f"🎲 [PPTXGen] Usando primeiro template disponível: {path}")
+        return path
+
+    logger.warning("❌ [PPTXGen] Nenhum template encontrado. Usando design via código.")
+    return None
 
 class PpptxSchema(BaseModel):
     slides_content_json: Any = Field(..., description="Conteúdo dos slides em JSON.")
-    template_name: Optional[str] = Field(None, description="Nome do template na biblioteca (ex: 'vendas', 'investidores').")
-
-def _get_template_path(template_name: str = None):
-    """Busca um template de forma inteligente (resiliente a nomes parciais)."""
-    import random
-    base_path = os.path.join(settings.BASE_DIR, "data", "templates", "pptx")
-    
-    if not os.path.exists(base_path):
-        os.makedirs(base_path, exist_ok=True)
-        return None
-
-    # 1. Lista todos os templates disponíveis
-    templates = [f for f in os.listdir(base_path) if f.endswith(".pptx")]
-    if not templates: return None
-
-    if template_name:
-        clean_query = str(template_name).lower().replace(".pptx", "").strip()
-        
-        # Tentativa A: Nome Exato (ex: financeiro.pptx)
-        for t in templates:
-            if t.lower() == f"{clean_query}.pptx": return os.path.join(base_path, t)
-        
-        # Tentativa B: Com prefixo 'template_' (ex: template_financeiro.pptx)
-        for t in templates:
-            if t.lower() == f"template_{clean_query}.pptx": return os.path.join(base_path, t)
-            
-        # Tentativa C: Busca por palavra-chave (ex: 'luxo' encontra 'template_marketing_luxo.pptx')
-        for t in templates:
-            if clean_query in t.lower(): return os.path.join(base_path, t)
-
-    # Fallback: Tenta o mestre primeiro, senão vai no aleatório
-    if "template.pptx" in templates:
-        return os.path.join(base_path, "template.pptx")
-    
-    chosen = random.choice(templates)
-    logger.info(f"[PPTXGen] 🎲 Template automático: {chosen}")
-    return os.path.join(base_path, chosen)
+    template_name: Optional[str] = Field(None, description="Nome do template.")
 
 @tool(args_schema=PpptxSchema)
 async def generate_pptx(slides_content_json: Any, template_name: str = None) -> str:
-    """Gera PPTX Premium com suporte a BIBLIOTECA DE TEMPLATES."""
-    if slides_content_json is None:
-        slides_content_json = {"title": "Apresentação", "slides": [{"title": "Aviso", "bullets": ["Sem conteúdo."]}]}
-
+    """Gera PPTX Premium com CAMINHOS ABSOLUTOS e FALLBACKS."""
     try:
         filename = f"Exec-Deck-{uuid.uuid4().hex[:6]}.pptx"
         filepath = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
 
-        # Normalização de JSON (Blindagem para Gemini/DeepSeek)
+        # Normalização de JSON
         prs_title, prs_subtitle, slides_data = "EXECUTIVE DECK", "", []
-        
         if isinstance(slides_content_json, str):
-            # Limpeza de markdown code blocks (```json ... ```)
             clean_json = re.sub(r'```(?:json)?\n?(.*?)\n?```', r'\1', slides_content_json, flags=re.DOTALL).strip()
-            try: 
-                slides_content_json = json.loads(clean_json)
+            try: slides_content_json = json.loads(clean_json)
             except: 
-                # Se ainda falhar, tenta extrair o primeiro par de chaves/colchetes
                 match = re.search(r'(\{.*\}|\[.*\])', clean_json, re.DOTALL)
-                if match:
-                    try: slides_content_json = json.loads(match.group(1))
-                    except: slides_data = [{"title": "Info", "bullets": [slides_content_json]}]
-                else:
-                    slides_data = [{"title": "Info", "bullets": [slides_content_json]}]
-        
+                slides_content_json = json.loads(match.group(1)) if match else {}
+
         if isinstance(slides_content_json, dict):
-            prs_title = slides_content_json.get("presentation_title", slides_content_json.get("title", "Apresentação"))
+            prs_title = slides_content_json.get("title", "Apresentação")
             prs_subtitle = slides_content_json.get("subtitle", "")
             slides_data = slides_content_json.get("slides", [])
-        elif isinstance(slides_content_json, list):
-            # Se a lista já contém dicts com title/content, usa direto
-            if slides_content_json and isinstance(slides_content_json[0], dict):
-                slides_data = slides_content_json
-            else:
-                slides_data = [{"title": "Ponto", "bullets": [str(i)]} for i in slides_content_json]
 
         # Geração
         template_path = _get_template_path(template_name)
-        if template_path:
-            logger.info(f"[PPTXGen] 📂 Usando template: {template_path}")
-            prs = Presentation(template_path)
-        else:
-            prs = Presentation()
-            prs.slide_width, prs.slide_height = _W, _H
+        prs = Presentation(template_path) if template_path else Presentation()
+        if not template_path: prs.slide_width, prs.slide_height = _W, _H
 
         _build_cover(prs, prs_title, prs_subtitle)
         for i, s_data in enumerate(slides_data):
             title = s_data.get("title", f"SLIDE {i+1}")
             bullets = s_data.get("bullets", s_data.get("content", []))
             if isinstance(bullets, str): bullets = [bullets]
-            
             img_path = s_data.get("image", s_data.get("img_path"))
-            if not img_path:
-                for b_idx, bullet in enumerate(bullets):
-                    match = re.search(r'<SEND_FILE:(img-[^>]+)>', str(bullet))
-                    if match:
-                        img_path = match.group(1)
-                        bullets[b_idx] = re.sub(r'<SEND_FILE:[^>]+>', '', str(bullet)).strip()
-                        break
-            
             _build_content(prs, title, bullets, img_path)
 
         await asyncio.to_thread(prs.save, filepath)
