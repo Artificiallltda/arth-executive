@@ -38,8 +38,7 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
-# --- Setup dos Modelos (Blindagem Manus AI) ---
-# Timeouts e Retries configurados globalmente
+# --- Setup dos Modelos (ORION ELITE V3 - GEMINI 3 SERIES) ---
 LLM_TIMEOUT = 90
 MAX_RETRIES = 3
 
@@ -53,9 +52,13 @@ def get_gemini_model(model_name: str, temperature: float = 0):
         disable_search=True
     )
 
-supervisor_llm = get_gemini_model("gemini-2.0-pro-exp-02-05") # Atualizado para versão estável pro
-executor_llm = get_gemini_model("gemini-2.0-flash") # Conforme manual: Flash é 3x mais rápido
+# SUPERVISOR: Gemini 3 Pro (O melhor para decisões)
+supervisor_llm = get_gemini_model("gemini-3-pro-preview") 
 
+# EXECUTOR: Gemini 3 Flash (O mais rápido do mundo)
+executor_llm = get_gemini_model("gemini-3-flash-preview")
+
+# DEEPSEEK: Mantido para tarefas de lógica pura
 deepseek_llm = ChatOpenAI(
     model="deepseek-chat",
     openai_api_key=settings.DEEPSEEK_API_KEY,
@@ -111,7 +114,6 @@ async def agent_node(state, agent, name):
             messages = [messages[0]] + messages[-29:]
         else: messages = messages[-30:]
             
-    # Blindagem de Execução com Timeout
     try:
         result = await asyncio.wait_for(
             agent.ainvoke({**state, "messages": messages}, RunnableConfig(recursion_limit=50)),
@@ -119,7 +121,7 @@ async def agent_node(state, agent, name):
         )
     except asyncio.TimeoutError:
         logger.error(f"[NODE] Timeout crítico no agente {name}")
-        error_msg = AIMessage(content=f"⚠️ O agente {name} demorou muito para responder. Tentando simplificar...", name=name)
+        error_msg = AIMessage(content=f"⚠️ O agente {name} demorou muito para responder.", name=name)
         return {"messages": [error_msg], "sender": name}
 
     msg = result["messages"][-1]
@@ -130,13 +132,6 @@ async def agent_node(state, agent, name):
         return str(content)
 
     content_str = extract_text(msg.content)
-    if content_str.startswith("[{'type': 'text'"):
-        try:
-            import ast
-            parsed = ast.literal_eval(content_str)
-            if isinstance(parsed, list) and len(parsed) > 0: content_str = parsed[0].get("text", content_str)
-        except: pass
-
     tool_messages = [m for m in result["messages"] if getattr(m, "type", "") == "tool"]
     tool_text = " ".join(str(m.content) for m in tool_messages)
     file_tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):([^>]+)>', tool_text)
@@ -192,13 +187,8 @@ async def supervisor_node(state: AgentState):
 
     short_messages = messages[-15:]
     try:
-        routing_result = await asyncio.wait_for(
-            supervisor_chain.ainvoke({**state, "messages": short_messages}),
-            timeout=LLM_TIMEOUT
-        )
-    except:
-        logger.warning("[SUPERVISOR] Falha no roteamento. Encaminhando para FINISH.")
-        return {"next_agent": "FINISH"}
+        routing_result = await asyncio.wait_for(supervisor_chain.ainvoke({**state, "messages": short_messages}), timeout=LLM_TIMEOUT)
+    except: return {"next_agent": "FINISH"}
     
     user_input = messages[last_human_idx].content.lower()
     needs_file = any(kw in user_input for kw in ["pdf", "docx", "pptx", "excel", "planilha", "imagem", "foto", "apresentação", "apresentacao"])
