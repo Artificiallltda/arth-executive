@@ -48,6 +48,7 @@ async def wait_for_file(file_path: str, max_wait: float = 10.0, check_interval: 
     return False
 
 # --- Setup dos Modelos ---
+# Versão: 2026.03.14-Orion-Elite-v2
 # Utilizando as versões mais atuais do Gemini conforme migração do GPT
 supervisor_llm = ChatGoogleGenerativeAI(
     model="gemini-3-pro-preview", 
