@@ -6,6 +6,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
+    pkg-config \
     libnss3 \
     libnspr4 \
     libatk1.0-0 \
@@ -20,13 +21,15 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     libpango-1.0-0 \
     libcairo2 \
+    libcairo2-dev \
+    libpangocairo-1.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copia e instala as dependências Python
+# Copia e instala as dependências Python (UTF-8 garantido agora)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# INSTALAÇÃO CRÍTICA DO NAVEGADOR PARA PDF DE ALTA QUALIDADE
+# INSTALAÇÃO DO NAVEGADOR PARA PDF DE ALTA QUALIDADE
 RUN playwright install chromium
 RUN playwright install-deps chromium
 
