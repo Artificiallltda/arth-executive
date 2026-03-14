@@ -154,12 +154,26 @@ async def generate_docx(title: str, content: str, filename: Optional[str] = None
         base_path = os.path.join(settings.BASE_DIR, "data", "templates", "docx")
         tp = None
         if os.path.exists(base_path):
-            if template_name:
-                p = os.path.join(base_path, f"{template_name.replace('.docx', '')}.docx")
-                if os.path.exists(p): tp = p
-            else:
-                templates = [f for f in os.listdir(base_path) if f.endswith(".docx")]
-                if templates: tp = os.path.join(base_path, random.choice(templates))
+            templates = [f for f in os.listdir(base_path) if f.endswith(".docx")]
+            if templates:
+                if template_name:
+                    clean_query = str(template_name).lower().replace(".docx", "").strip()
+                    # 1. Nome exato
+                    for t in templates:
+                        if t.lower() == f"{clean_query}.docx": tp = os.path.join(base_path, t); break
+                    # 2. Prefixo template_
+                    if not tp:
+                        for t in templates:
+                            if t.lower() == f"template_{clean_query}.docx": tp = os.path.join(base_path, t); break
+                    # 3. Contém palavra-chave
+                    if not tp:
+                        for t in templates:
+                            if clean_query in t.lower(): tp = os.path.join(base_path, t); break
+                
+                # Se ainda não achou e não tem template específico pedido, tenta o padrão ou aleatório
+                if not tp and not template_name:
+                    if "template.docx" in templates: tp = os.path.join(base_path, "template.docx")
+                    else: tp = os.path.join(base_path, random.choice(templates))
         
         doc = Document(tp) if tp else Document()
         

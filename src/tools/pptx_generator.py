@@ -156,7 +156,7 @@ class PpptxSchema(BaseModel):
     template_name: Optional[str] = Field(None, description="Nome do template na biblioteca (ex: 'vendas', 'investidores').")
 
 def _get_template_path(template_name: str = None):
-    """Busca um template específico ou escolhe um automaticamente da biblioteca."""
+    """Busca um template de forma inteligente (resiliente a nomes parciais)."""
     import random
     base_path = os.path.join(settings.BASE_DIR, "data", "templates", "pptx")
     
@@ -164,21 +164,31 @@ def _get_template_path(template_name: str = None):
         os.makedirs(base_path, exist_ok=True)
         return None
 
-    if template_name:
-        clean_name = template_name.replace(".pptx", "")
-        specific_path = os.path.join(base_path, f"{clean_name}.pptx")
-        if os.path.exists(specific_path): return specific_path
-
-    # Seleção Automática (Público)
+    # 1. Lista todos os templates disponíveis
     templates = [f for f in os.listdir(base_path) if f.endswith(".pptx")]
     if not templates: return None
 
-    # Tenta o mestre primeiro, senão vai no aleatório
+    if template_name:
+        clean_query = str(template_name).lower().replace(".pptx", "").strip()
+        
+        # Tentativa A: Nome Exato (ex: financeiro.pptx)
+        for t in templates:
+            if t.lower() == f"{clean_query}.pptx": return os.path.join(base_path, t)
+        
+        # Tentativa B: Com prefixo 'template_' (ex: template_financeiro.pptx)
+        for t in templates:
+            if t.lower() == f"template_{clean_query}.pptx": return os.path.join(base_path, t)
+            
+        # Tentativa C: Busca por palavra-chave (ex: 'luxo' encontra 'template_marketing_luxo.pptx')
+        for t in templates:
+            if clean_query in t.lower(): return os.path.join(base_path, t)
+
+    # Fallback: Tenta o mestre primeiro, senão vai no aleatório
     if "template.pptx" in templates:
         return os.path.join(base_path, "template.pptx")
     
     chosen = random.choice(templates)
-    logger.info(f"[PPTXGen] 🎲 Template automático para o público: {chosen}")
+    logger.info(f"[PPTXGen] 🎲 Template automático: {chosen}")
     return os.path.join(base_path, chosen)
 
 @tool(args_schema=PpptxSchema)
