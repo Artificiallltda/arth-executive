@@ -237,18 +237,21 @@ async def supervisor_node(state: AgentState):
     short_messages = messages[-15:]
     routing_result = await supervisor_chain.ainvoke({**state, "messages": short_messages})
     
-    # Validação de Rota (Blindagem de Arquivos)
+    # Validação de Rota (Blindagem de Arquivos e Fluxo Manus AI)
     user_input = messages[last_human_idx].content.lower()
     needs_file = any(kw in user_input for kw in ["pdf", "docx", "pptx", "excel", "planilha", "imagem", "foto", "apresentação", "apresentacao"])
     
-    if needs_file and routing_result.next_agent == "FINISH" and not has_file:
-        # Se o usuário pediu arquivo e o orquestrador quer finalizar sem ter gerado nada:
-        # 1. Se ainda não pesquisou e precisa de dados, vai para o researcher
-        if specialist_runs.get("arth_researcher", 0) == 0 and any(kw in user_input for kw in ["pesquise", "busque", "analise"]):
-            return {"next_agent": "arth_researcher"}
-        # 2. Se já tem dados (ou não precisa), vai para o executor
-        if specialist_runs.get("arth_executor", 0) == 0:
+    # REGRA DE OURO: Se houve pesquisa e o usuário quer arquivo, FORÇA o executor
+    has_research = specialist_runs.get("arth_researcher", 0) > 0
+    if needs_file and not has_file:
+        if has_research:
+            logger.info("[SUPERVISOR] 🚀 Pesquisa concluída. Encaminhando OBRIGATORIAMENTE para o Executor.")
             return {"next_agent": "arth_executor"}
+        elif specialist_runs.get("arth_executor", 0) == 0:
+            return {"next_agent": "arth_executor"}
+
+    if needs_file and routing_result.next_agent == "FINISH" and not has_file:
+        return {"next_agent": "arth_executor"}
 
     ret = {"next_agent": routing_result.next_agent}
     

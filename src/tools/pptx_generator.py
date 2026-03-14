@@ -109,28 +109,31 @@ def _build_content(prs, title, bullets, img_path=None):
         
         if found_path:
             try:
-                # Lógica de Redimensionamento Proporcional (Sem Esticar)
-                # Área disponível: 6.0 x 5.0 polegadas
-                pic = slide.shapes.add_picture(found_path, Inches(0.5), Inches(1.5))
-                
+                # Lógica de Redimensionamento Proporcional Inteligente (Sem Deformação)
                 max_w, max_h = Inches(6.0), Inches(5.0)
-                ratio = min(max_w / pic.width, max_h / pic.height)
+                pic = slide.shapes.add_picture(found_path, Inches(0), Inches(0)) # Adiciona temporário para pegar dimensões
                 
-                pic.width = int(pic.width * ratio)
-                pic.height = int(pic.height * ratio)
+                # Calcula o fator de escala mantendo a proporção
+                scale = min(max_w / pic.width, max_h / pic.height)
                 
-                # Centraliza na área reservada
+                pic.width = int(pic.width * scale)
+                pic.height = int(pic.height * scale)
+                
+                # Centraliza na área reservada (Inches 0.5 a 6.5 Horizontal, 1.5 a 6.5 Vertical)
                 pic.left = Inches(0.5) + int((max_w - pic.width) / 2)
                 pic.top = Inches(1.5) + int((max_h - pic.height) / 2)
                 
-                # Borda elegante (Estilo Manus)
-                _rect(slide, pic.left - Pt(2), pic.top - Pt(2), pic.width + Pt(4), pic.height + Pt(4), _ACCENT)
-                pic.z_order = 10 # Garante que a imagem fique na frente da borda
+                # Remove e adiciona novamente na posição correta (evita bugs de renderização)
+                actual_left, actual_top = pic.left, pic.top
+                actual_w, actual_top_h = pic.width, pic.height
+                # Borda decorativa acompanhando o tamanho exato
+                _rect(slide, actual_left - Pt(2), actual_top - Pt(2), actual_w + Pt(4), actual_top_h + Pt(4), _ACCENT)
+                pic.z_order = 10 
                 
                 has_image = True
-                logger.info(f"[PPTXGen] 📸 Imagem proporcional inserida: {found_path}")
+                logger.info(f"[PPTXGen] 📸 Imagem proporcional aplicada: {found_path}")
             except Exception as e:
-                logger.warning(f"[PPTXGen] Falha ao inserir imagem {found_path}: {e}")
+                logger.warning(f"[PPTXGen] Falha ao processar imagem: {e}")
 
     txt_l = Inches(7.0) if has_image else Inches(1.0)
     txt_w = Inches(5.8) if has_image else Inches(11.3)
