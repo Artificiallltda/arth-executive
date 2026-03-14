@@ -104,19 +104,27 @@ def _apply_premium_style(file_path: str):
             cell.border = thin_border
 
         # --- DADOS E FORMATAÇÃO CONDICIONAL ---
-        total_entradas = 0
-        total_saidas = 0
         valor_col_idx = -1
         tipo_col_idx = -1
+        status_col_idx = -1
 
-        # Identifica colunas de Valor e Tipo
+        # Identifica colunas-chave
         for col in range(1, ws.max_column + 1):
             header_val = str(ws.cell(row=1, column=col).value).lower()
             if "valor" in header_val: valor_col_idx = col
             if "tipo" in header_val: tipo_col_idx = col
+            if "status" in header_val: status_col_idx = col
+
+        # Status cores
+        status_fills = {
+            "recebido": PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid"),
+            "pago": PatternFill(start_color="DDEBF7", end_color="DDEBF7", fill_type="solid"),
+            "pendente": PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid"),
+            "agendado": PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid"),
+        }
 
         for row in range(2, ws.max_row + 1):
-            ws.row_dimensions[row].height = 22
+            ws.row_dimensions[row].height = 25
             for col in range(1, ws.max_column + 1):
                 cell = ws.cell(row=row, column=col)
                 cell.border = thin_border
@@ -125,17 +133,8 @@ def _apply_premium_style(file_path: str):
                 # Formata Moeda
                 if col == valor_col_idx:
                     cell.number_format = '#,##0.00'
-                    val = cell.value or 0
-                    try: 
-                        val_num = float(val)
-                        # Acumula totais para o rodapé
-                        if tipo_col_idx != -1:
-                            tipo = str(ws.cell(row=row, column=tipo_col_idx).value).lower()
-                            if "entrada" in tipo or "receita" in tipo: total_entradas += val_num
-                            else: total_saidas += val_num
-                    except: pass
 
-                # Cores por Tipo
+                # Cores por Tipo (Entrada/Saída)
                 if col == tipo_col_idx:
                     val_tipo = str(cell.value).lower()
                     if "entrada" in val_tipo or "receita" in val_tipo:
@@ -144,44 +143,55 @@ def _apply_premium_style(file_path: str):
                     else:
                         cell.fill = saida_fill
                         cell.font = saida_font
+                
+                # Cores por Status
+                if col == status_col_idx:
+                    val_status = str(cell.value).lower()
+                    if val_status in status_fills:
+                        cell.fill = status_fills[val_status]
 
-        # --- RODAPÉ DE TOTAIS (Se houver valores numéricos) ---
+        # --- RODAPÉ DE TOTAIS COM FÓRMULAS DINÂMICAS ---
         if valor_col_idx != -1 and ws.max_row > 1:
             start_row = ws.max_row + 2
+            v_letter = get_column_letter(valor_col_idx)
+            t_letter = get_column_letter(tipo_col_idx) if tipo_col_idx != -1 else None
             
-            # Label Total Entradas
-            l1 = ws.cell(row=start_row, column=valor_col_idx-1, value="TOTAL ENTRADAS:")
-            l1.font = Font(bold=True, color="006100")
+            # TOTAL GERAL (Soma simples como fallback se não houver coluna de tipo)
+            l1 = ws.cell(row=start_row, column=valor_col_idx-1, value="TOTAL GERAL:")
+            l1.font = Font(bold=True)
             l1.alignment = Alignment(horizontal="right")
             
-            v1 = ws.cell(row=start_row, column=valor_col_idx, value=total_entradas)
+            v1 = ws.cell(row=start_row, column=valor_col_idx)
+            v1.value = f"=SUM({v_letter}2:{v_letter}{ws.max_row})"
             v1.font = Font(bold=True)
             v1.number_format = '#,##0.00'
-            v1.fill = entrada_fill
-            
-            # Label Total Saídas
-            l2 = ws.cell(row=start_row+1, column=valor_col_idx-1, value="TOTAL SAÍDAS:")
-            l2.font = Font(bold=True, color="9C0006")
-            l2.alignment = Alignment(horizontal="right")
-            
-            v2 = ws.cell(row=start_row+1, column=valor_col_idx, value=total_saidas)
-            v2.font = Font(bold=True)
-            v2.number_format = '#,##0.00'
-            v2.fill = saida_fill
-            
-            # Saldo
-            l3 = ws.cell(row=start_row+2, column=valor_col_idx-1, value="SALDO FINAL:")
-            l3.font = Font(bold=True, size=12)
-            l3.alignment = Alignment(horizontal="right")
-            
-            saldo = total_entradas - total_saidas
-            v3 = ws.cell(row=start_row+2, column=valor_col_idx, value=saldo)
-            v3.font = Font(bold=True, size=12, color="006100" if saldo >= 0 else "9C0006")
-            v3.number_format = '#,##0.00'
+            v1.fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+            v1.border = thin_border
 
-        # Ajuste de largura automático
+            # Se houver coluna de tipo, faz o Saldo (Entradas - Saídas)
+            if t_letter:
+                l2 = ws.cell(row=start_row+1, column=valor_col_idx-1, value="SALDO ESTIMADO:")
+                l2.font = Font(bold=True, size=12)
+                l2.alignment = Alignment(horizontal="right")
+                
+                v2 = ws.cell(row=start_row+1, column=valor_col_idx)
+                # Fórmula SUMIF: Soma se tipo for entrada, subtrai se for saída
+                v2.value = f'=SUMIF({t_letter}2:{t_letter}{ws.max_row}, "*receita*", {v_letter}2:{v_letter}{ws.max_row}) + SUMIF({t_letter}2:{t_letter}{ws.max_row}, "*entrada*", {v_letter}2:{v_letter}{ws.max_row}) - SUMIF({t_letter}2:{t_letter}{ws.max_row}, "*saída*", {v_letter}2:{v_letter}{ws.max_row}) - SUMIF({t_letter}2:{t_letter}{ws.max_row}, "*despesa*", {v_letter}2:{v_letter}{ws.max_row})'
+                v2.font = Font(bold=True, size=12)
+                v2.number_format = '#,##0.00'
+                v2.border = thin_border
+
+        # Ajuste de largura inteligente baseado no conteúdo
         for col in range(1, ws.max_column + 1):
-            ws.column_dimensions[get_column_letter(col)].width = 20
+            max_length = 0
+            column = get_column_letter(col)
+            for cell in ws[column]:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except: pass
+            adjusted_width = (max_length + 4)
+            ws.column_dimensions[column].width = min(adjusted_width, 50)
 
         wb.save(file_path)
         logger.info(f"✨ [ExcelGen] Formatação Avançada aplicada em: {file_path}")

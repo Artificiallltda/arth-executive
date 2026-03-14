@@ -54,59 +54,70 @@ def _set_margins(doc: Document, margin_in: float = 1.0):
 
 
 def _parse_markdown_to_docx(doc: Document, content: str):
-    """Converte markdown simples em Word com design executivo."""
-    for line in content.split('\n'):
+    """Converte markdown enriquecido em Word com design de consultoria de elite."""
+    lines = content.split('\n')
+    i = 0
+    while i < len(lines):
+        line = lines[i]
         stripped = line.strip()
 
         if not stripped:
-            p = doc.add_paragraph()
-            p.paragraph_format.space_after = Pt(4)
+            doc.add_paragraph()
+            i += 1
+            continue
+
+        # Suporte a Tabelas em Markdown (Simples)
+        if stripped.startswith('|') and i + 1 < len(lines) and lines[i+1].strip().startswith('|---'):
+            # Detectamos uma tabela
+            headers = [c.strip() for c in stripped.split('|') if c.strip()]
+            table = doc.add_table(rows=1, cols=len(headers))
+            table.style = 'Table Grid'
+            hdr_cells = table.rows[0].cells
+            for idx, h in enumerate(headers):
+                hdr_cells[idx].text = h
+                # Estilo de Cabeçalho de Tabela
+                p = hdr_cells[idx].paragraphs[0]
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = p.runs[0]
+                run.font.bold = True
+                run.font.color.rgb = _AZUL_CORP
+            
+            i += 2 # pula header e a linha de separação |---|
+            while i < len(lines) and lines[i].strip().startswith('|'):
+                row_data = [c.strip() for c in lines[i].split('|') if c.strip()]
+                if len(row_data) == len(headers):
+                    row_cells = table.add_row().cells
+                    for idx, val in enumerate(row_data):
+                        row_cells[idx].text = val
+                i += 1
             continue
 
         if stripped.startswith('# ') and not stripped.startswith('## '):
             h = doc.add_heading(stripped[2:].strip(), level=1)
-            h.paragraph_format.space_before = Pt(20)
-            h.paragraph_format.space_after  = Pt(8)
+            h.paragraph_format.space_before = Pt(24)
+            h.paragraph_format.space_after  = Pt(12)
             if h.runs:
                 h.runs[0].font.color.rgb = _AZUL_CORP
-                h.runs[0].font.size      = Pt(16)
-                h.runs[0].font.name      = "Calibri"
+                h.runs[0].font.size      = Pt(18)
 
         elif stripped.startswith('## '):
             h = doc.add_heading(stripped[3:].strip(), level=2)
-            h.paragraph_format.space_before = Pt(14)
-            h.paragraph_format.space_after  = Pt(6)
+            h.paragraph_format.space_before = Pt(18)
+            h.paragraph_format.space_after  = Pt(10)
             if h.runs:
                 h.runs[0].font.color.rgb = _AZUL_SEC
-                h.runs[0].font.size      = Pt(13)
-                h.runs[0].font.name      = "Calibri"
-
-        elif stripped.startswith('### '):
-            h = doc.add_heading(stripped[4:].strip(), level=3)
-            h.paragraph_format.space_before = Pt(10)
-            h.paragraph_format.space_after  = Pt(4)
-            if h.runs:
-                h.runs[0].font.color.rgb = _CINZA_H
-                h.runs[0].font.size      = Pt(11)
-                h.runs[0].font.name      = "Calibri"
+                h.runs[0].font.size      = Pt(14)
 
         elif stripped.startswith('- ') or stripped.startswith('* '):
             p = doc.add_paragraph(style='List Bullet')
-            p.paragraph_format.space_after  = Pt(4)
-            p.paragraph_format.space_before = Pt(2)
             _add_rich_text(p, stripped[2:].strip(), size_pt=11, color=_CINZA_BODY)
-
-        elif re.match(r'^\d+\. ', stripped):
-            text_body = re.sub(r'^\d+\. ', '', stripped)
-            p = doc.add_paragraph(style='List Number')
-            p.paragraph_format.space_after = Pt(4)
-            _add_rich_text(p, text_body, size_pt=11, color=_CINZA_BODY)
 
         else:
             p = doc.add_paragraph()
-            p.paragraph_format.space_after  = Pt(8)
-            p.paragraph_format.space_before = Pt(2)
+            p.paragraph_format.line_spacing = 1.15
             _add_rich_text(p, stripped, size_pt=11, color=_CINZA_BODY)
+        
+        i += 1
 
 
 from pydantic import BaseModel, Field
