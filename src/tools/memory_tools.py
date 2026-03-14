@@ -2,7 +2,7 @@ import os
 from typing import Optional
 from langchain_core.tools import tool
 from langchain_chroma import Chroma
-from langchain_openai import OpenAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from src.config import settings
 
 PERSIST_DIRECTORY = os.path.join(os.getcwd(), "data", "chroma_db")
@@ -12,7 +12,10 @@ def _get_vector_store() -> Chroma:
     """Lazy init: cria o Chroma apenas na primeira chamada real."""
     global _vector_store
     if _vector_store is None:
-        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+        embeddings = GoogleGenerativeAIEmbeddings(
+            model="models/gemini-embedding-001",
+            google_api_key=settings.GEMINI_API_KEY
+        )
         _vector_store = Chroma(
             collection_name="arth_long_term_memory",
             embedding_function=embeddings,

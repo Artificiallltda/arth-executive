@@ -2,7 +2,7 @@ import os
 import logging
 import uuid
 from langchain_core.tools import tool
-from langchain_openai import OpenAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from src.config import settings
@@ -15,10 +15,13 @@ COLLECTION_NAME = "corporate_knowledge"
 
 def get_vector_store():
     """Retorna a inst\u00e2ncia do ChromaDB para opera\u00e7\u00f5es."""
-    if not settings.OPENAI_API_KEY:
-        raise ValueError("OPENAI_API_KEY n\u00e3o configurada para RAG.")
+    if not settings.GEMINI_API_KEY:
+        raise ValueError("GEMINI_API_KEY não configurada para RAG.")
         
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-small", api_key=settings.OPENAI_API_KEY)
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model="models/gemini-embedding-001",
+        google_api_key=settings.GEMINI_API_KEY
+    )
     
     return Chroma(
         collection_name=COLLECTION_NAME,

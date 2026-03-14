@@ -1,13 +1,16 @@
 import os
 from langchain_core.tools import tool
 from langchain_chroma import Chroma
-from langchain_openai import OpenAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from src.config import settings
 
 # Inicializa o banco vetorial local (SQLite)
 # Ele vai criar uma pasta "chroma_db" dentro de "data"
 PERSIST_DIRECTORY = os.path.join(os.getcwd(), "data", "chroma_db")
-embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+embeddings = GoogleGenerativeAIEmbeddings(
+    model="models/gemini-embedding-001",
+    google_api_key=os.environ.get("GEMINI_API_KEY", "")
+)
 vector_store = Chroma(
     collection_name="arth_long_term_memory",
     embedding_function=embeddings,
