@@ -69,67 +69,124 @@ def _clean_data(raw_data: Any) -> List[Dict[str, Any]]:
     return cleaned
 
 def _apply_premium_style(file_path: str):
-    """Aplica o design corporativo premium (Manus AI) à planilha gerada."""
+    """Aplica o design corporativo premium (Inspirado no Manus AI) à planilha gerada."""
     try:
         from openpyxl import load_workbook
         from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
         from openpyxl.utils import get_column_letter
 
         wb = load_workbook(file_path)
+        ws = wb.active
         
-        # Paleta Corporativa Premium Executiva
-        header_fill = PatternFill(start_color="1C4E9E", end_color="1C4E9E", fill_type="solid") # Azul Corporativo
-        zebra_fill = PatternFill(start_color="F9FAFB", end_color="F9FAFB", fill_type="solid") # Cinza super claro
-        header_font = Font(color="FFFFFF", bold=True, name="Calibri", size=12)
-        cell_font = Font(name="Calibri", size=11, color="333333")
+        # --- DEFINIÇÃO DE ESTILOS PREMIUM ---
+        header_fill = PatternFill(start_color="2F5496", end_color="2F5496", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF", size=12)
+        
+        entrada_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+        saida_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+        entrada_font = Font(color="006100")
+        saida_font = Font(color="9C0006")
+        
         thin_border = Border(
-            left=Side(style='thin', color='E5E7EB'), 
-            right=Side(style='thin', color='E5E7EB'), 
-            top=Side(style='thin', color='E5E7EB'), 
-            bottom=Side(style='thin', color='E5E7EB')
+            left=Side(style="thin", color="D1D5DB"),
+            right=Side(style="thin", color="D1D5DB"),
+            top=Side(style="thin", color="D1D5DB"),
+            bottom=Side(style="thin", color="D1D5DB")
         )
-        
-        for sheet_name in wb.sheetnames:
-            ws = wb[sheet_name]
-            
-            # Congelar painel superior (Header) e adicionar Filtro
-            ws.freeze_panes = "A2"
-            if ws.max_column > 0:
-                end_col_letter = get_column_letter(ws.max_column)
-                ws.auto_filter.ref = f"A1:{end_col_letter}{ws.max_row}"
-            
-            # Formatar Cabeçalhos
-            for col in range(1, ws.max_column + 1):
-                cell = ws.cell(row=1, column=col)
-                cell.fill = header_fill
-                cell.font = header_font
-                cell.alignment = Alignment(horizontal="center", vertical="center")
-                cell.border = thin_border
-            
-            # Formatar Células, Stripe e Ajustar Largura
-            for col in range(1, ws.max_column + 1):
-                max_len = len(str(ws.cell(row=1, column=col).value or ""))
-                for row in range(2, ws.max_row + 1):
-                    c = ws.cell(row=row, column=col)
-                    c.font = cell_font
-                    c.border = thin_border
-                    c.alignment = Alignment(vertical="center", wrap_text=True)
-                    
-                    # Zebra Striping (linhas pares com fundo leve)
-                    if row % 2 == 0:
-                        c.fill = zebra_fill
+        align_center = Alignment(horizontal="center", vertical="center")
 
-                    if c.value:
-                        max_len = max(max_len, len(str(c.value)))
+        # --- CABEÇALHOS ---
+        for col in range(1, ws.max_column + 1):
+            cell = ws.cell(row=1, column=col)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = align_center
+            cell.border = thin_border
+
+        # --- DADOS E FORMATAÇÃO CONDICIONAL ---
+        total_entradas = 0
+        total_saidas = 0
+        valor_col_idx = -1
+        tipo_col_idx = -1
+
+        # Identifica colunas de Valor e Tipo
+        for col in range(1, ws.max_column + 1):
+            header_val = str(ws.cell(row=1, column=col).value).lower()
+            if "valor" in header_val: valor_col_idx = col
+            if "tipo" in header_val: tipo_col_idx = col
+
+        for row in range(2, ws.max_row + 1):
+            ws.row_dimensions[row].height = 22
+            for col in range(1, ws.max_column + 1):
+                cell = ws.cell(row=row, column=col)
+                cell.border = thin_border
+                cell.alignment = align_center
                 
-                # Ajuste inteligente de largura de coluna (limitado a 60 caracteres)
-                adjusted_width = min(max_len + 5, 80)
-                ws.column_dimensions[get_column_letter(col)].width = adjusted_width
+                # Formata Moeda
+                if col == valor_col_idx:
+                    cell.number_format = '#,##0.00'
+                    val = cell.value or 0
+                    try: 
+                        val_num = float(val)
+                        # Acumula totais para o rodapé
+                        if tipo_col_idx != -1:
+                            tipo = str(ws.cell(row=row, column=tipo_col_idx).value).lower()
+                            if "entrada" in tipo or "receita" in tipo: total_entradas += val_num
+                            else: total_saidas += val_num
+                    except: pass
+
+                # Cores por Tipo
+                if col == tipo_col_idx:
+                    val_tipo = str(cell.value).lower()
+                    if "entrada" in val_tipo or "receita" in val_tipo:
+                        cell.fill = entrada_fill
+                        cell.font = entrada_font
+                    else:
+                        cell.fill = saida_fill
+                        cell.font = saida_font
+
+        # --- RODAPÉ DE TOTAIS (Se houver valores numéricos) ---
+        if valor_col_idx != -1 and ws.max_row > 1:
+            start_row = ws.max_row + 2
+            
+            # Label Total Entradas
+            l1 = ws.cell(row=start_row, column=valor_col_idx-1, value="TOTAL ENTRADAS:")
+            l1.font = Font(bold=True, color="006100")
+            l1.alignment = Alignment(horizontal="right")
+            
+            v1 = ws.cell(row=start_row, column=valor_col_idx, value=total_entradas)
+            v1.font = Font(bold=True)
+            v1.number_format = '#,##0.00'
+            v1.fill = entrada_fill
+            
+            # Label Total Saídas
+            l2 = ws.cell(row=start_row+1, column=valor_col_idx-1, value="TOTAL SAÍDAS:")
+            l2.font = Font(bold=True, color="9C0006")
+            l2.alignment = Alignment(horizontal="right")
+            
+            v2 = ws.cell(row=start_row+1, column=valor_col_idx, value=total_saidas)
+            v2.font = Font(bold=True)
+            v2.number_format = '#,##0.00'
+            v2.fill = saida_fill
+            
+            # Saldo
+            l3 = ws.cell(row=start_row+2, column=valor_col_idx-1, value="SALDO FINAL:")
+            l3.font = Font(bold=True, size=12)
+            l3.alignment = Alignment(horizontal="right")
+            
+            saldo = total_entradas - total_saidas
+            v3 = ws.cell(row=start_row+2, column=valor_col_idx, value=saldo)
+            v3.font = Font(bold=True, size=12, color="006100" if saldo >= 0 else "9C0006")
+            v3.number_format = '#,##0.00'
+
+        # Ajuste de largura automático
+        for col in range(1, ws.max_column + 1):
+            ws.column_dimensions[get_column_letter(col)].width = 20
 
         wb.save(file_path)
-        logger.info(f"✨ [ExcelGen] Formatação Executiva aplicada com sucesso em: {file_path}")
+        logger.info(f"✨ [ExcelGen] Formatação Avançada aplicada em: {file_path}")
     except Exception as e:
-        logger.warning(f"⚠️ [ExcelGen] Falhou ao aplicar formatação premium em {file_path}: {e}")
+        logger.warning(f"⚠️ [ExcelGen] Erro ao aplicar estilo avançado: {e}")
 
 @tool(args_schema=ReadExcelSchema)
 async def read_excel(file_path: str, sheet_name: Union[str, int] = 0) -> List[Dict[str, Any]]:

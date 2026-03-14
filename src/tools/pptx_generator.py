@@ -86,23 +86,36 @@ def _build_content(prs, title, bullets, img_path=None):
 
     has_image = False
     if img_path:
-        clean_name = str(img_path)
-        tag_match = re.search(r'<SEND_FILE:([^>]+)>', clean_name)
-        if tag_match: clean_name = tag_match.group(1).strip()
-        else: clean_name = clean_name.replace("SEND_FILE:", "").replace("<", "").replace(">", "").strip()
+        # Limpeza agressiva do caminho da imagem enviado pela LLM
+        clean_name = str(img_path).strip()
+        # Remove tags caso a LLM tenha enviado <SEND_FILE:img.png>
+        clean_name = re.sub(r'<[^>]+>', '', clean_name)
+        clean_name = clean_name.replace("SEND_FILE:", "").replace("img:", "").strip()
+        
+        # Lista de tentativas de encontrar o arquivo (com hífens, sublinhados, etc.)
+        candidates = [
+            clean_name,
+            clean_name if clean_name.endswith(('.png', '.jpg', '.jpeg')) else f"{clean_name}.png",
+            clean_name.replace("-", "_"),
+            clean_name.replace("_", "-")
+        ]
         
         found_path = None
-        for v in [clean_name, clean_name.replace("-", "_"), clean_name.replace("_", "-")]:
-            fp = os.path.join(settings.DATA_OUTPUTS_PATH, v)
+        for cand in candidates:
+            fp = os.path.join(settings.DATA_OUTPUTS_PATH, cand)
             if os.path.exists(fp):
                 found_path = fp
                 break
+        
         if found_path:
             try:
+                # Borda elegante para a imagem (Estilo Manus)
                 _rect(slide, Inches(0.45), Inches(1.45), Inches(6.1), Inches(5.1), _ACCENT)
                 slide.shapes.add_picture(found_path, Inches(0.5), Inches(1.5), width=Inches(6.0), height=Inches(5.0))
                 has_image = True
-            except: pass
+                logger.info(f"[PPTXGen] 📸 Imagem inserida: {found_path}")
+            except Exception as e:
+                logger.warning(f"[PPTXGen] Falha ao inserir imagem {found_path}: {e}")
 
     txt_l = Inches(7.0) if has_image else Inches(1.0)
     txt_w = Inches(5.8) if has_image else Inches(11.3)
