@@ -74,7 +74,7 @@ def _run_flash_image(enhanced_prompt: str) -> tuple[bytes, str]:
     return _extract_image_bytes(response)
 
 
-def _run_gemini_25_flash(enhanced_prompt: str) -> tuple[bytes, str]:
+def _run_gemini_3_pro_image(enhanced_prompt: str) -> tuple[bytes, str]:
     from google import genai
     from google.genai import types
 
@@ -83,7 +83,7 @@ def _run_gemini_25_flash(enhanced_prompt: str) -> tuple[bytes, str]:
         http_options={"timeout": _TIMEOUT_MS},
     )
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3-pro-image-preview",
         contents=enhanced_prompt,
         config=types.GenerateContentConfig(
             response_modalities=["IMAGE", "TEXT"],
@@ -105,7 +105,7 @@ async def generate_image(prompt: str, orientation: Optional[str] = "square") -> 
     """
     Gera imagem profissional via AI.
     Primary: gemini-3.1-flash-image-preview.
-    Fallback 1: gemini-2.5-flash.
+    Fallback 1: gemini-3-pro-image-preview.
     Fallback 2: dall-e-3 (OpenAI)
     """
     if not settings.GEMINI_API_KEY:
@@ -123,19 +123,19 @@ async def generate_image(prompt: str, orientation: Optional[str] = "square") -> 
         model_used = "gemini-3.1-flash-image-preview"
         logger.info(f"[ImageGen] flash-image-preview OK: {len(image_bytes):,} bytes, mime={mime}")
     except Exception as e1:
-        logger.warning(f"[ImageGen] flash-image-preview falhou ({type(e1).__name__}: {e1}). Tentando gemini-2.5-flash...")
+        logger.warning(f"[ImageGen] flash-image-preview falhou ({type(e1).__name__}: {e1}). Tentando gemini-3-pro-image-preview...")
 
-        # --- Fallback: gemini-2.5-flash ---
+        # --- Fallback: gemini-3-pro-image-preview ---
         try:
             image_bytes, mime = await asyncio.wait_for(
-                asyncio.to_thread(_run_gemini_25_flash, enhanced_prompt),
+                asyncio.to_thread(_run_gemini_3_pro_image, enhanced_prompt),
                 timeout=_TIMEOUT_S + 5,
             )
-            model_used = "gemini-2.5-flash"
-            logger.info(f"[ImageGen] gemini-2.5-flash OK: {len(image_bytes):,} bytes, mime={mime}")
+            model_used = "gemini-3-pro-image-preview"
+            logger.info(f"[ImageGen] gemini-3-pro-image-preview OK: {len(image_bytes):,} bytes, mime={mime}")
         except Exception as e2:
-            logger.error(f"[ImageGen] Ambos falharam. flash-image: {type(e1).__name__}:{e1} | 2.5-flash: {type(e2).__name__}:{e2}")
-            return f"Erro na geração de imagem. flash-image-preview: {e1} | gemini-2.5-flash: {e2}"
+            logger.error(f"[ImageGen] Ambos falharam. flash-image: {type(e1).__name__}:{e1} | pro-image: {type(e2).__name__}:{e2}")
+            return f"Erro na geração de imagem. flash-image-preview: {e1} | pro-image-preview: {e2}"
 
     ext = _ext_from_mime(mime)
     filename = f"img-{uuid.uuid4().hex[:8]}.{ext}"

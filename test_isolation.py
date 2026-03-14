@@ -1,5 +1,5 @@
 import os
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.prebuilt import create_react_agent
 from langchain_core.tools import tool
 
@@ -8,7 +8,7 @@ def dummy():
     """Dummy tool"""
     return "ok"
 
-llm = ChatOpenAI(model="gpt-4o-mini")
+llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview")
 print("Initializing agent...")
 try:
     agent = create_react_agent(llm, tools=[dummy], state_modifier="You are a helper.")

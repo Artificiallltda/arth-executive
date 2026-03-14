@@ -22,9 +22,9 @@ class Settings(BaseSettings):
 
 
     # --- MODELS ---
-    PRIMARY_MODEL: str = os.getenv("PRIMARY_MODEL", "openai") # Voltando para OpenAI como motor principal
-    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o") 
-    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash") # Upgrade para 2.5 Flash
+    PRIMARY_MODEL: str = os.getenv("PRIMARY_MODEL", "gemini") # Gemini 3.1 como motor principal
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gemini-3.1-pro-preview") 
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview") # Upgrade para Gemini 3 Flash
     
     # --- KEYS ---
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")

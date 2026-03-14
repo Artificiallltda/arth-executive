@@ -25,14 +25,14 @@ def build_arth_graph():
     Constr\'F3i o c\'E9rebro Aut\'F4nomo do Arth (Motor ReAct) com Fallback.
     """
     
-    # Modelo Principal (OpenAI)
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    # Modelo Principal (Gemini 3 Flash)
+    llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=settings.GEMINI_API_KEY, temperature=0)
     llm_with_tools = llm.bind_tools(TOTO_TOOLS)
     
     # Modelo Secund\'e1rio / Fallback (Google Gemini)
     # Se a OpenAI falhar, o LangChain tenta automaticamente com o Gemini
     gemini_llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash", 
+        model="gemini-3-flash-preview", 
         google_api_key=settings.GEMINI_API_KEY, 
         temperature=0
     )

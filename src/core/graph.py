@@ -49,14 +49,14 @@ async def wait_for_file(file_path: str, max_wait: float = 10.0, check_interval: 
     return False
 
 # --- Setup dos Modelos ---
-supervisor_llm = ChatOpenAI(model="gpt-4o", temperature=0)
+supervisor_llm = ChatGoogleGenerativeAI(model="gemini-3.1-pro-preview", google_api_key=settings.GEMINI_API_KEY, temperature=0)
 deepseek_llm = ChatOpenAI(
     model="deepseek-chat",
     openai_api_key=settings.DEEPSEEK_API_KEY,
     openai_api_base="https://api.deepseek.com",
     temperature=0.3
 )
-executor_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+executor_llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=settings.GEMINI_API_KEY, temperature=0)
 gemini_fallback = ChatGoogleGenerativeAI(model=settings.GEMINI_MODEL, google_api_key=settings.GEMINI_API_KEY, temperature=0)
 
 def load_persona(agent_filename: str) -> str:
@@ -122,7 +122,7 @@ async def agent_node(state, agent, name):
     channel = state.get("channel", "")
     # PROTEÇÃO CONTRA ESTOURO DE CONTEXTO (Max 128k tokens)
     # Limita o histórico enviado para o agente para as últimas 30 mensagens
-    # para evitar sobrecarregar os modelos (especialmente gpt-4o-mini e deepseek).
+    # para evitar sobrecarregar os modelos (especialmente gemini-3-flash-preview e deepseek).
     if len(messages) > 30:
         # Mantém a SystemMessage (primeira msg) se existir, e pega as últimas 29
         if messages and getattr(messages[0], "type", "") == "system":
