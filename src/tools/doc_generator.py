@@ -54,7 +54,7 @@ def _set_margins(doc: Document, margin_in: float = 1.0):
 
 
 def _parse_markdown_to_docx(doc: Document, content: str):
-    """Converte markdown enriquecido em Word com design de consultoria de elite."""
+    """Converte markdown enriquecido com Componentes de Design (Estilo Tailwind)."""
     lines = content.split('\n')
     i = 0
     while i < len(lines):
@@ -66,23 +66,51 @@ def _parse_markdown_to_docx(doc: Document, content: str):
             i += 1
             continue
 
-        # Suporte a Tabelas em Markdown (Simples)
+        # --- COMPONENTE: BLOCO DE DESTAQUE / CARD ---
+        if stripped.startswith('[DESTAQUE]') or stripped.startswith('[CARD]'):
+            tag = '[DESTAQUE]' if stripped.startswith('[DESTAQUE]') else '[CARD]'
+            end_tag = tag.replace('[', '[/')
+            block_content = stripped.replace(tag, "")
+            i += 1
+            while i < len(lines) and end_tag not in lines[i]:
+                block_content += "\n" + lines[i]
+                i += 1
+            block_content = block_content.replace(end_tag, "").strip()
+            
+            # Renderiza o Bloco como uma Tabela de Célula Única (Simulando um Card)
+            table = doc.add_table(rows=1, cols=1)
+            table.width = _W
+            cell = table.rows[0].cells[0]
+            # Fundo Azul Leve (Tailwind blue-50)
+            shading_elm = parse_xml(f'<w:shd {nsdecls("w")} w:fill="F0F7FF" w:val="clear"/>')
+            cell._tc.get_or_add_tcPr().append(shading_elm)
+            
+            p = cell.paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            _add_rich_text(p, "💡 INSIGHT EXECUTIVO:", size_pt=10, color=_AZUL_CORP)
+            p.runs[0].bold = True
+            
+            p2 = cell.add_paragraph()
+            _add_rich_text(p2, block_content, size_pt=11, color=_CINZA_BODY)
+            i += 1
+            continue
+
+        # --- COMPONENTE: TABELA EM MARKDOWN ---
         if stripped.startswith('|') and i + 1 < len(lines) and lines[i+1].strip().startswith('|---'):
-            # Detectamos uma tabela
             headers = [c.strip() for c in stripped.split('|') if c.strip()]
             table = doc.add_table(rows=1, cols=len(headers))
             table.style = 'Table Grid'
             hdr_cells = table.rows[0].cells
             for idx, h in enumerate(headers):
                 hdr_cells[idx].text = h
-                # Estilo de Cabeçalho de Tabela
+                # Estilo de Cabeçalho
                 p = hdr_cells[idx].paragraphs[0]
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                run = p.runs[0]
-                run.font.bold = True
-                run.font.color.rgb = _AZUL_CORP
+                if p.runs:
+                    p.runs[0].font.bold = True
+                    p.runs[0].font.color.rgb = _AZUL_CORP
             
-            i += 2 # pula header e a linha de separação |---|
+            i += 2
             while i < len(lines) and lines[i].strip().startswith('|'):
                 row_data = [c.strip() for c in lines[i].split('|') if c.strip()]
                 if len(row_data) == len(headers):
@@ -92,6 +120,7 @@ def _parse_markdown_to_docx(doc: Document, content: str):
                 i += 1
             continue
 
+        # Cabeçalhos e Listas normais
         if stripped.startswith('# ') and not stripped.startswith('## '):
             h = doc.add_heading(stripped[2:].strip(), level=1)
             h.paragraph_format.space_before = Pt(24)
@@ -99,7 +128,6 @@ def _parse_markdown_to_docx(doc: Document, content: str):
             if h.runs:
                 h.runs[0].font.color.rgb = _AZUL_CORP
                 h.runs[0].font.size      = Pt(18)
-
         elif stripped.startswith('## '):
             h = doc.add_heading(stripped[3:].strip(), level=2)
             h.paragraph_format.space_before = Pt(18)
@@ -107,17 +135,17 @@ def _parse_markdown_to_docx(doc: Document, content: str):
             if h.runs:
                 h.runs[0].font.color.rgb = _AZUL_SEC
                 h.runs[0].font.size      = Pt(14)
-
         elif stripped.startswith('- ') or stripped.startswith('* '):
             p = doc.add_paragraph(style='List Bullet')
             _add_rich_text(p, stripped[2:].strip(), size_pt=11, color=_CINZA_BODY)
-
         else:
             p = doc.add_paragraph()
-            p.paragraph_format.line_spacing = 1.15
             _add_rich_text(p, stripped, size_pt=11, color=_CINZA_BODY)
         
         i += 1
+
+from docx.oxml.ns import nsdecls
+from docx.oxml import parse_xml
 
 
 from pydantic import BaseModel, Field
