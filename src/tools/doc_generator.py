@@ -317,11 +317,29 @@ async def generate_pdf(title: str, content: str) -> str:
         eff_w = pdf.w - pdf.l_margin - pdf.r_margin
         pdf.set_text_color(*_TEXT)
 
-        # Processamento de conteúdo com suporte a Markdown básico
+        # Processamento de conteúdo com suporte a Markdown e Componentes
         for line in content.split('\n'):
             stripped = line.strip()
             if not stripped:
                 pdf.ln(4)
+                continue
+
+            # --- COMPONENTE: BLOCO DE DESTAQUE / CARD (PDF) ---
+            match_comp = re.search(r'\[(DESTAQUE|CARD)\](.*?)\[\/\1\]', line, re.DOTALL | re.IGNORECASE)
+            if match_comp:
+                tag_type = match_comp.group(1).upper()
+                block_txt = match_comp.group(2).strip()
+                
+                pdf.set_fill_color(240, 247, 255) # Azul clarinho
+                pdf.set_font("Helvetica", "B", 10)
+                pdf.set_text_color(*_AZUL_CORP_PDF)
+                label = "💡 INSIGHT EXECUTIVO:" if tag_type == "DESTAQUE" else "📝 NOTA ESTRATÉGICA:"
+                pdf.cell(0, 8, label, 0, 1, 'L', fill=True)
+                
+                pdf.set_font("Helvetica", "", 11)
+                pdf.set_text_color(*_TEXT)
+                _safe_multi_cell(pdf, eff_w, 7, _clean_pdf_text(block_txt))
+                pdf.ln(5)
                 continue
 
             clean_line = _clean_pdf_text(stripped)
