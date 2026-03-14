@@ -218,8 +218,8 @@ async def supervisor_node(state: AgentState):
             specialist_runs[m.name] = specialist_runs.get(m.name, 0) + 1
             if "<SEND_FILE:" in str(m.content): has_file = True
 
-    # Trava de velocidade: Se gerou mídia, encerra.
-    if has_file and specialist_runs.get("arth_executor", 0) > 0:
+    # Trava de segurança contra loops infinitos (Max 3 execuções do executor por turno)
+    if specialist_runs.get("arth_executor", 0) >= 3:
         return {"next_agent": "FINISH"}
 
     short_messages = messages[-15:]
