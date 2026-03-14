@@ -48,7 +48,7 @@ async def wait_for_file(file_path: str, max_wait: float = 10.0, check_interval: 
     return False
 
 # --- Setup dos Modelos ---
-supervisor_llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=0, google_api_key=settings.GEMINI_API_KEY)
+supervisor_llm = ChatGoogleGenerativeAI(model="gemini-3-pro-preview", temperature=0, google_api_key=settings.GEMINI_API_KEY)
 deepseek_llm = ChatGoogleGenerativeAI(
     model="deepseek-chat", # Note: LangChain might need a specific bridge for DeepSeek if used this way, but keeping logic for now
     google_api_key=settings.DEEPSEEK_API_KEY, # This might be wrong if it's actually using the OpenAI class
@@ -63,8 +63,8 @@ deepseek_llm = ChatOpenAI(
     temperature=0.3
 )
 
-executor_llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, google_api_key=settings.GEMINI_API_KEY)
-gemini_fallback = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=settings.GEMINI_API_KEY, temperature=0)
+executor_llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", temperature=0, google_api_key=settings.GEMINI_API_KEY)
+gemini_fallback = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=settings.GEMINI_API_KEY, temperature=0)
 
 def load_persona(agent_filename: str) -> str:
     path = os.path.join(settings.SQUAD_PATH, agent_filename)

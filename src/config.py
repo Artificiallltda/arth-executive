@@ -22,9 +22,9 @@ class Settings(BaseSettings):
 
 
     # --- MODELS ---
-    PRIMARY_MODEL: str = os.getenv("PRIMARY_MODEL", "gemini-1.5-pro") 
-    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gemini-1.5-pro") 
-    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    PRIMARY_MODEL: str = os.getenv("PRIMARY_MODEL", "gemini-3-pro-preview") 
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gemini-3-pro-preview") 
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
     
     # --- KEYS ---
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
