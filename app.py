@@ -2,22 +2,24 @@ import logging
 import uvicorn
 import sys
 import os
+import asyncio
+import httpx
 from fastapi import FastAPI, Query
 from fastapi.responses import PlainTextResponse
 from contextlib import asynccontextmanager
 
-# INJEÇÃO DE PATH: Garante que o Python encontre a pasta 'src' dentro da subpasta do projeto
+# INJEÇÃO DE PATH
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if "src" not in sys.path:
     sys.path.append(os.path.join(current_dir, "src"))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
-# Importações atualizadas para o novo padrão de isolamento
 from src.router.message_handler import router as message_router
 from src.scheduler.reminder_worker import scheduler, load_pending_reminders
 from src.core.engine import engine
 from src.utils.log_buffer import setup_log_buffer, get_logs_json, get_logs_text
+from src.config import settings
 
 # ─── Logging Config ──────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -28,35 +30,56 @@ logging.basicConfig(
 setup_log_buffer(root_level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+async def keepalive_railway():
+    """Ping no próprio servidor a cada 8 minutos para evitar hibernação."""
+    public_url = os.getenv("RAILWAY_PUBLIC_DOMAIN")
+    if not public_url:
+        logger.warning("[INFRA] RAILWAY_PUBLIC_DOMAIN não configurado. Keep-alive desativado.")
+        return
+
+    url = f"https://{public_url}/health"
+    logger.info(f"[INFRA] Iniciando keep-alive para {url}")
+    
+    async with httpx.AsyncClient() as client:
+        while True:
+            await asyncio.sleep(480) # 8 minutos
+            try:
+                response = await client.get(url, timeout=10)
+                logger.info(f"[INFRA] Keep-alive Railway: {response.status_code}")
+            except Exception as e:
+                logger.warning(f"[INFRA] Keep-alive falhou: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("[SERVER] Iniciando Arth Executive AI (Audit Mode 0.2.0)...")
+    logger.info("[SERVER] Iniciando Arth Executive AI (Modo Blindado v3)...")
+    
+    # Inicia serviços de background
     scheduler.start()
     load_pending_reminders()
+    
+    # Inicia keep-alive do Railway
+    asyncio.create_task(keepalive_railway())
+    
     yield
+    
     logger.info("[SERVER] Encerrando conexões graciosamente...")
     await engine.cleanup()
     scheduler.shutdown()
 
-app = FastAPI(title="Arth Executive AI - Audit Orion", version="0.2.0", lifespan=lifespan)
-
-def log_resources():
-    try:
-        import psutil
-        m = psutil.virtual_memory()
-        logger.info(f"[INFRA] RAM: {m.percent}% | CPU: {psutil.cpu_percent()}%")
-    except: pass
+app = FastAPI(title="Arth Executive AI - Auditoria Orion", version="0.3.0", lifespan=lifespan)
 
 @app.middleware("http")
 async def monitor_infra(request, call_next):
-    log_resources()
+    # Log simplificado de requisição
     return await call_next(request)
 
 app.include_router(message_router, prefix="/api/v1")
 
 @app.get("/")
-async def root():
-    return {"status": "ok", "service": "Arth Executive AI - Auditoria Orion"}
+@app.get("/health")
+async def health():
+    """Rota de saúde usada pelo monitoramento e keep-alive."""
+    return {"status": "ok", "service": "Arth Executive AI", "version": "0.3.0"}
 
 @app.get("/api/v1/logs", response_class=PlainTextResponse)
 async def view_logs(
