@@ -109,31 +109,34 @@ def _build_content(prs, title, bullets, img_path=None):
         
         if found_path:
             try:
-                # Lógica de Redimensionamento Proporcional Inteligente (Sem Deformação)
+                # 1. Adiciona a imagem temporariamente em uma área invisível para medir as dimensões reais
+                temp_pic = slide.shapes.add_picture(found_path, 0, 0)
+                orig_w, orig_h = temp_pic.width, temp_pic.height
+                
+                # 2. Calcula o redimensionamento proporcional para a área de 6x5 polegadas
                 max_w, max_h = Inches(6.0), Inches(5.0)
-                pic = slide.shapes.add_picture(found_path, Inches(0), Inches(0)) # Adiciona temporário para pegar dimensões
+                scale = min(max_w / orig_w, max_h / orig_h)
+                new_w = int(orig_w * scale)
+                new_h = int(orig_h * scale)
                 
-                # Calcula o fator de escala mantendo a proporção
-                scale = min(max_w / pic.width, max_h / pic.height)
+                # 3. Calcula a posição centralizada na área reservada
+                left = Inches(0.5) + int((max_w - new_w) / 2)
+                top = Inches(1.5) + int((max_h - new_h) / 2)
                 
-                pic.width = int(pic.width * scale)
-                pic.height = int(pic.height * scale)
+                # 4. Remove a imagem temporária (limpando o XML do slide)
+                shape_obj = temp_pic._element
+                shape_obj.getparent().remove(shape_obj)
                 
-                # Centraliza na área reservada (Inches 0.5 a 6.5 Horizontal, 1.5 a 6.5 Vertical)
-                pic.left = Inches(0.5) + int((max_w - pic.width) / 2)
-                pic.top = Inches(1.5) + int((max_h - pic.height) / 2)
+                # 5. ADICIONA PRIMEIRO A BORDA (Fica atrás)
+                _rect(slide, left - Pt(2), top - Pt(2), new_w + Pt(4), new_h + Pt(4), _ACCENT)
                 
-                # Remove e adiciona novamente na posição correta (evita bugs de renderização)
-                actual_left, actual_top = pic.left, pic.top
-                actual_w, actual_top_h = pic.width, pic.height
-                # Borda decorativa acompanhando o tamanho exato
-                _rect(slide, actual_left - Pt(2), actual_top - Pt(2), actual_w + Pt(4), actual_top_h + Pt(4), _ACCENT)
-                pic.z_order = 10 
+                # 6. ADICIONA A IMAGEM POR CIMA
+                slide.shapes.add_picture(found_path, left, top, width=new_w, height=new_h)
                 
                 has_image = True
-                logger.info(f"[PPTXGen] 📸 Imagem proporcional aplicada: {found_path}")
+                logger.info(f"[PPTXGen] ✅ Imagem proporcional inserida com sucesso: {found_path}")
             except Exception as e:
-                logger.warning(f"[PPTXGen] Falha ao processar imagem: {e}")
+                logger.error(f"[PPTXGen] ❌ Erro ao processar imagem: {e}")
 
     txt_l = Inches(7.0) if has_image else Inches(1.0)
     txt_w = Inches(5.8) if has_image else Inches(11.3)

@@ -174,8 +174,15 @@ async def agent_node(state, agent, name):
     tool_text = " ".join(str(m.content) for m in tool_messages)
     file_tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):([^>]+)>', tool_text)
     
+    # SILENCIAMENTO INTELIGENTE (Estilo Manus AI)
+    # Se houver um documento principal, não mostra imagens individuais (img-xxx)
+    has_main_doc = any(f.lower().endswith(('.pptx', '.pdf', '.docx', '.xlsx')) for f in file_tags)
+    
     # Injeta as tags na mensagem para o estado saber
     for tag in file_tags:
+        # Se temos um doc principal, pula tags que começam com 'img-'
+        if has_main_doc and tag.lower().startswith('img-'):
+            continue
         t_str = f"<SEND_FILE:{tag}>"
         if t_str not in content_str: content_str += f"\n{t_str}"
         
