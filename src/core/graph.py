@@ -11,7 +11,6 @@ from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import create_react_agent
-from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from src.core.state import AgentState
@@ -49,15 +48,23 @@ async def wait_for_file(file_path: str, max_wait: float = 10.0, check_interval: 
     return False
 
 # --- Setup dos Modelos ---
-supervisor_llm = ChatOpenAI(model="gemini-3.1-pro-preview", temperature=0, api_key=settings.GEMINI_API_KEY, base_url="https://generativelanguage.googleapis.com/v1beta/openai/")
+supervisor_llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=0, google_api_key=settings.GEMINI_API_KEY)
+deepseek_llm = ChatGoogleGenerativeAI(
+    model="deepseek-chat", # Note: LangChain might need a specific bridge for DeepSeek if used this way, but keeping logic for now
+    google_api_key=settings.DEEPSEEK_API_KEY, # This might be wrong if it's actually using the OpenAI class
+) # Actually DeepSeek SHOULD use ChatOpenAI. Re-reading config.
+
+# CORREÇÃO: DeepSeek mantém OpenAI, Gemini usa Google nativo
+from langchain_openai import ChatOpenAI
 deepseek_llm = ChatOpenAI(
     model="deepseek-chat",
     openai_api_key=settings.DEEPSEEK_API_KEY,
     openai_api_base="https://api.deepseek.com",
     temperature=0.3
 )
-executor_llm = ChatOpenAI(model="gemini-3-flash-preview", temperature=0, api_key=settings.GEMINI_API_KEY, base_url="https://generativelanguage.googleapis.com/v1beta/openai/")
-gemini_fallback = ChatGoogleGenerativeAI(model=settings.GEMINI_MODEL, google_api_key=settings.GEMINI_API_KEY, temperature=0)
+
+executor_llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, google_api_key=settings.GEMINI_API_KEY)
+gemini_fallback = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=settings.GEMINI_API_KEY, temperature=0)
 
 def load_persona(agent_filename: str) -> str:
     path = os.path.join(settings.SQUAD_PATH, agent_filename)
