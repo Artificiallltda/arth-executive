@@ -147,16 +147,28 @@ async def agent_node(state, agent, name):
     result = await agent.ainvoke({**state, "messages": messages}, RunnableConfig(recursion_limit=50))
     msg = result["messages"][-1]
 
-    # TRATAMENTO ROBUSTO DE CONTEÚDO (Gemini 3.1 Lista -> String)
-    content_str = ""
-    if isinstance(msg.content, list):
-        for part in msg.content:
-            if isinstance(part, dict):
-                content_str += part.get("text", "")
-            elif isinstance(part, str):
-                content_str += part
-    else:
-        content_str = str(msg.content)
+    # EXTRAÇÃO AGRESSIVA DE TEXTO (Blindagem contra formato Multimodal do Gemini 3.1)
+    def extract_text(content):
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return " ".join(extract_text(part) for part in content)
+        if isinstance(content, dict):
+            # Tenta pegar 'text' ou o primeiro valor string que encontrar
+            return content.get("text", content.get("content", str(content)))
+        return str(content)
+
+    content_str = extract_text(msg.content)
+
+    # Limpeza de possíveis artefatos de stringificação de lista/dict que restarem
+    if content_str.startswith("[{'type': 'text'"):
+        try:
+            # Tenta extrair o texto de dentro da string que parece uma lista
+            import ast
+            parsed = ast.literal_eval(content_str)
+            if isinstance(parsed, list) and len(parsed) > 0:
+                content_str = parsed[0].get("text", content_str)
+        except: pass
 
     tool_messages = [m for m in result["messages"] if getattr(m, "type", "") == "tool"]
     tool_text = " ".join(str(m.content) for m in tool_messages)
