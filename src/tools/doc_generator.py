@@ -66,28 +66,23 @@ def _parse_markdown_to_docx(doc: Document, content: str):
             i += 1
             continue
 
-        # --- COMPONENTE: BLOCO DE DESTAQUE / CARD ---
-        if stripped.startswith('[DESTAQUE]') or stripped.startswith('[CARD]'):
-            tag = '[DESTAQUE]' if stripped.startswith('[DESTAQUE]') else '[CARD]'
-            end_tag = tag.replace('[', '[/')
-            block_content = stripped.replace(tag, "")
-            i += 1
-            while i < len(lines) and end_tag not in lines[i]:
-                block_content += "\n" + lines[i]
-                i += 1
-            block_content = block_content.replace(end_tag, "").strip()
+        # --- COMPONENTE: BLOCO DE DESTAQUE / CARD (Regex Blindado) ---
+        match_destaque = re.search(r'\[(DESTAQUE|CARD)\](.*?)\[\/\1\]', line, re.DOTALL | re.IGNORECASE)
+        if match_destaque:
+            tag_type = match_destaque.group(1).upper()
+            block_content = match_destaque.group(2).strip()
             
-            # Renderiza o Bloco como uma Tabela de Célula Única (Simulando um Card)
+            # Renderiza o Card
             table = doc.add_table(rows=1, cols=1)
             table.width = _W
             cell = table.rows[0].cells[0]
-            # Fundo Azul Leve (Tailwind blue-50)
+            # Fundo Azul Leve
             shading_elm = parse_xml(f'<w:shd {nsdecls("w")} w:fill="F0F7FF" w:val="clear"/>')
             cell._tc.get_or_add_tcPr().append(shading_elm)
             
             p = cell.paragraphs[0]
-            p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            _add_rich_text(p, "💡 INSIGHT EXECUTIVO:", size_pt=10, color=_AZUL_CORP)
+            label = "💡 INSIGHT EXECUTIVO:" if tag_type == "DESTAQUE" else "📝 NOTA ESTRATÉGICA:"
+            _add_rich_text(p, label, size_pt=10, color=_AZUL_CORP)
             p.runs[0].bold = True
             
             p2 = cell.add_paragraph()

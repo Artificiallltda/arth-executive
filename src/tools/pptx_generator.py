@@ -109,11 +109,26 @@ def _build_content(prs, title, bullets, img_path=None):
         
         if found_path:
             try:
-                # Borda elegante para a imagem (Estilo Manus)
-                _rect(slide, Inches(0.45), Inches(1.45), Inches(6.1), Inches(5.1), _ACCENT)
-                slide.shapes.add_picture(found_path, Inches(0.5), Inches(1.5), width=Inches(6.0), height=Inches(5.0))
+                # Lógica de Redimensionamento Proporcional (Sem Esticar)
+                # Área disponível: 6.0 x 5.0 polegadas
+                pic = slide.shapes.add_picture(found_path, Inches(0.5), Inches(1.5))
+                
+                max_w, max_h = Inches(6.0), Inches(5.0)
+                ratio = min(max_w / pic.width, max_h / pic.height)
+                
+                pic.width = int(pic.width * ratio)
+                pic.height = int(pic.height * ratio)
+                
+                # Centraliza na área reservada
+                pic.left = Inches(0.5) + int((max_w - pic.width) / 2)
+                pic.top = Inches(1.5) + int((max_h - pic.height) / 2)
+                
+                # Borda elegante (Estilo Manus)
+                _rect(slide, pic.left - Pt(2), pic.top - Pt(2), pic.width + Pt(4), pic.height + Pt(4), _ACCENT)
+                pic.z_order = 10 # Garante que a imagem fique na frente da borda
+                
                 has_image = True
-                logger.info(f"[PPTXGen] 📸 Imagem inserida: {found_path}")
+                logger.info(f"[PPTXGen] 📸 Imagem proporcional inserida: {found_path}")
             except Exception as e:
                 logger.warning(f"[PPTXGen] Falha ao inserir imagem {found_path}: {e}")
 
