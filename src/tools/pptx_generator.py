@@ -44,11 +44,11 @@ def _rect(slide, l, t, w, h, color):
 def _add_decorative_elements(slide):
     shape = slide.shapes.add_shape(5, _W - Inches(3), _H - Inches(2), Inches(3), Inches(2))
     shape.fill.solid()
-    shape.fore_color.rgb = _CARD
+    shape.fill.fore_color.rgb = _CARD
     shape.line.fill.background()
     line = slide.shapes.add_shape(1, Inches(0.5), _H - Inches(0.8), _W - Inches(1), Pt(1))
     line.fill.solid()
-    line.fore_color.rgb = _ACCENT
+    line.fill.fore_color.rgb = _ACCENT
 
 def _text(slide, l, t, w, h, txt, size, bold=False, color=_TEXT, align=PP_ALIGN.LEFT, italic=False):
     tb = slide.shapes.add_textbox(l, t, w, h)
@@ -168,7 +168,11 @@ async def generate_pptx(slides_content_json: Any, template_name: str = None) -> 
             prs_subtitle = slides_content_json.get("subtitle", "")
             slides_data = slides_content_json.get("slides", [])
         elif isinstance(slides_content_json, list):
-            slides_data = [{"title": "Ponto", "bullets": [str(i)]} for i in slides_content_json]
+            # Se a lista já contém dicts com title/content, usa direto
+            if slides_content_json and isinstance(slides_content_json[0], dict):
+                slides_data = slides_content_json
+            else:
+                slides_data = [{"title": "Ponto", "bullets": [str(i)]} for i in slides_content_json]
 
         # Geração
         template_path = _get_template_path(template_name)
