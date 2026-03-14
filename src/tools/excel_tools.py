@@ -24,6 +24,7 @@ class WriteExcelSchema(BaseModel):
 
 def _clean_data(raw_data: Any) -> List[Dict[str, Any]]:
     """Tenta limpar e consertar o payload de dados enviado pelo modelo Gemini/OpenAI."""
+    import re
     logger.info(f"📊 [ExcelTool] Recebido para limpeza: tipo={type(raw_data)}")
     
     if raw_data is None:
@@ -31,10 +32,20 @@ def _clean_data(raw_data: Any) -> List[Dict[str, Any]]:
         raise ValueError("O campo 'data' foi recebido como None/Empty. Você deve prover dados para criar uma planilha.")
         
     if isinstance(raw_data, str):
+        # Limpeza de markdown code blocks (```json ... ```)
+        clean_str = re.sub(r'```(?:json)?\n?(.*?)\n?```', r'\1', raw_data, flags=re.DOTALL).strip()
         try:
-            raw_data = json.loads(raw_data)
+            raw_data = json.loads(clean_str)
         except Exception:
-            raise ValueError("O campo 'data' foi enviado como uma string mas não é um JSON válido.")
+            # Tenta extrair apenas a parte que parece JSON (entre [] ou {})
+            match = re.search(r'(\[.*\]|\{.*\})', clean_str, re.DOTALL)
+            if match:
+                try:
+                    raw_data = json.loads(match.group(1))
+                except:
+                    raise ValueError("O campo 'data' foi enviado como uma string mas não conseguimos extrair um JSON válido.")
+            else:
+                raise ValueError("O campo 'data' foi enviado como uma string mas não é um JSON válido.")
             
     if not isinstance(raw_data, list):
         if isinstance(raw_data, dict):

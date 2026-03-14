@@ -48,11 +48,13 @@ async def wait_for_file(file_path: str, max_wait: float = 10.0, check_interval: 
     return False
 
 # --- Setup dos Modelos ---
-supervisor_llm = ChatGoogleGenerativeAI(model="gemini-3-pro-preview", temperature=0, google_api_key=settings.GEMINI_API_KEY)
-deepseek_llm = ChatGoogleGenerativeAI(
-    model="deepseek-chat", # Note: LangChain might need a specific bridge for DeepSeek if used this way, but keeping logic for now
-    google_api_key=settings.DEEPSEEK_API_KEY, # This might be wrong if it's actually using the OpenAI class
-) # Actually DeepSeek SHOULD use ChatOpenAI. Re-reading config.
+# Utilizando as versões mais atuais do Gemini conforme migração do GPT
+supervisor_llm = ChatGoogleGenerativeAI(
+    model="gemini-3-pro-preview", 
+    temperature=0, 
+    google_api_key=settings.GEMINI_API_KEY,
+    disable_search=True # Evita conflitos com ferramentas de busca manuais
+)
 
 # CORREÇÃO: DeepSeek mantém OpenAI, Gemini usa Google nativo
 from langchain_openai import ChatOpenAI
@@ -63,7 +65,12 @@ deepseek_llm = ChatOpenAI(
     temperature=0.3
 )
 
-executor_llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", temperature=0, google_api_key=settings.GEMINI_API_KEY)
+# Executor com Gemini 3.1 Flash (mais rápido para geração de mídia/pptx)
+executor_llm = ChatGoogleGenerativeAI(
+    model="gemini-3-flash-preview", 
+    temperature=0, 
+    google_api_key=settings.GEMINI_API_KEY
+)
 gemini_fallback = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=settings.GEMINI_API_KEY, temperature=0)
 
 def load_persona(agent_filename: str) -> str:

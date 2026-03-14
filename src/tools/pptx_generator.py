@@ -157,11 +157,22 @@ async def generate_pptx(slides_content_json: Any, template_name: str = None) -> 
         filename = f"Exec-Deck-{uuid.uuid4().hex[:6]}.pptx"
         filepath = os.path.join(settings.DATA_OUTPUTS_PATH, filename)
 
-        # Normalização
+        # Normalização de JSON (Blindagem para Gemini/DeepSeek)
         prs_title, prs_subtitle, slides_data = "EXECUTIVE DECK", "", []
+        
         if isinstance(slides_content_json, str):
-            try: slides_content_json = json.loads(slides_content_json)
-            except: slides_data = [{"title": "Info", "bullets": [slides_content_json]}]
+            # Limpeza de markdown code blocks (```json ... ```)
+            clean_json = re.sub(r'```(?:json)?\n?(.*?)\n?```', r'\1', slides_content_json, flags=re.DOTALL).strip()
+            try: 
+                slides_content_json = json.loads(clean_json)
+            except: 
+                # Se ainda falhar, tenta extrair o primeiro par de chaves/colchetes
+                match = re.search(r'(\{.*\}|\[.*\])', clean_json, re.DOTALL)
+                if match:
+                    try: slides_content_json = json.loads(match.group(1))
+                    except: slides_data = [{"title": "Info", "bullets": [slides_content_json]}]
+                else:
+                    slides_data = [{"title": "Info", "bullets": [slides_content_json]}]
         
         if isinstance(slides_content_json, dict):
             prs_title = slides_content_json.get("presentation_title", slides_content_json.get("title", "Apresentação"))
