@@ -147,22 +147,29 @@ async def agent_node(state, agent, name):
     result = await agent.ainvoke({**state, "messages": messages}, RunnableConfig(recursion_limit=50))
     msg = result["messages"][-1]
 
-    if not isinstance(msg.content, str):
-        msg = msg.model_copy(update={"content": str(msg.content)})
+    # TRATAMENTO ROBUSTO DE CONTEÚDO (Gemini 3.1 Lista -> String)
+    content_str = ""
+    if isinstance(msg.content, list):
+        for part in msg.content:
+            if isinstance(part, dict):
+                content_str += part.get("text", "")
+            elif isinstance(part, str):
+                content_str += part
+    else:
+        content_str = str(msg.content)
 
     tool_messages = [m for m in result["messages"] if getattr(m, "type", "") == "tool"]
     tool_text = " ".join(str(m.content) for m in tool_messages)
     file_tags = re.findall(r'<(?:SEND_FILE|SEND_AUDIO):([^>]+)>', tool_text)
     
     # Injeta as tags na mensagem para o estado saber
-    msg_content = msg.content
     for tag in file_tags:
         t_str = f"<SEND_FILE:{tag}>"
-        if t_str not in msg_content: msg_content += f"\n{t_str}"
+        if t_str not in content_str: content_str += f"\n{t_str}"
         
     # FIX: Ensure the correct agent name is attached to the AIMessage 
     # so the supervisor can properly count it and break loops.
-    msg = msg.model_copy(update={"content": msg_content, "name": name})
+    msg = msg.model_copy(update={"content": content_str, "name": name})
 
     return {
         "messages": [msg],
@@ -218,13 +225,18 @@ async def supervisor_node(state: AgentState):
     short_messages = messages[-15:]
     routing_result = await supervisor_chain.ainvoke({**state, "messages": short_messages})
     
-    # Validação de Rota
+    # Validação de Rota (Blindagem de Arquivos)
     user_input = messages[last_human_idx].content.lower()
-    needs_file = any(kw in user_input for kw in ["pdf", "docx", "pptx", "excel", "planilha", "imagem", "foto"])
+    needs_file = any(kw in user_input for kw in ["pdf", "docx", "pptx", "excel", "planilha", "imagem", "foto", "apresentação", "apresentacao"])
     
     if needs_file and routing_result.next_agent == "FINISH" and not has_file:
-        if specialist_runs.get("arth_analyst", 0) == 0: return {"next_agent": "arth_analyst"}
-        if specialist_runs.get("arth_executor", 0) == 0: return {"next_agent": "arth_executor"}
+        # Se o usuário pediu arquivo e o orquestrador quer finalizar sem ter gerado nada:
+        # 1. Se ainda não pesquisou e precisa de dados, vai para o researcher
+        if specialist_runs.get("arth_researcher", 0) == 0 and any(kw in user_input for kw in ["pesquise", "busque", "analise"]):
+            return {"next_agent": "arth_researcher"}
+        # 2. Se já tem dados (ou não precisa), vai para o executor
+        if specialist_runs.get("arth_executor", 0) == 0:
+            return {"next_agent": "arth_executor"}
 
     ret = {"next_agent": routing_result.next_agent}
     
