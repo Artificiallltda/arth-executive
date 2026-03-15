@@ -13,7 +13,8 @@ env.bak/
 venv.bak/
 
 # Project specific
-data/
+data/*
+!data/templates/
 *.log
 *.db
 test_image_resp.json
