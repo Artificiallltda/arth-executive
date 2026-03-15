@@ -5,84 +5,38 @@ from langchain_core.messages import SystemMessage
 logger = logging.getLogger(__name__)
 
 async def arth_analyst_processor(state: dict) -> dict:
-    """Processa requisições do Analista com proteção contra None."""
+    """Processa requisições do Analista com diretrizes de elite."""
     
-    # ==================================================================
-    # PROTEÇÃO CONTRA None (IMPEDE ERRO DE VALIDAÇÃO) (PARTE 3)
-    # ==================================================================
-    if state is None:
-        logger.error("[Analyst] ❌ State é None! Criando vazio.")
-        state = {}
-    
-    # Extrai e valida campos
-    user_input = state.get("user_input", "")
-    if user_input is None:
-        user_input = ""
-    
+    messages = state.get("messages", [])
     content = state.get("content", "")
-    if content is None:
-        content = ""
-    
-    last_agent = state.get("last_agent", "")
-    if last_agent is None:
-        last_agent = ""
-    
-    # Garante que são strings
-    user_input = str(user_input) if user_input is not None else ""
-    content = str(content) if content is not None else ""
-    last_agent = str(last_agent) if last_agent is not None else ""
-    
-    logger.info(f"[Analyst] Processando: '{user_input[:50]}...'")
-    logger.info(f"[Analyst] Último agente: {last_agent}")
-    
-    # Extrai mensagens e detecta pesquisa
-    new_messages = list(state.get("messages", []))
-    has_research = any("pesquisa" in str(m.content).lower() or "resultado" in str(m.content).lower() for m in new_messages[-5:])
-    
-    # Prioriza content do estado (pesquisa/geração anterior)
-    rich_content = str(content) if content else ""
-    if not rich_content:
-        # Se o content explícito estiver vazio, tenta inferir das mensagens
-        last_ai_msg = next((m for m in reversed(new_messages) if m.type == "ai"), None)
-        if last_ai_msg and len(str(last_ai_msg.content)) > 100:
-            rich_content = str(last_ai_msg.content)
-            logger.info(f"[Analyst] 📥 Recuperado conteúdo rico das mensagens: {len(rich_content)} chars")
-        else:
-            # NOVO: Se ainda não tem conteúdo, usa o input do usuário para redigir do zero
-            rich_content = f"Documento redigido baseado no pedido: {user_input}"
-            logger.warning(f"[Analyst] ⚠️ Sem pesquisa disponível. Redigindo do zero baseado no input.")
+    user_input = state.get("user_input", "")
 
-    logger.info(f"[Analyst] Conteúdo final para processamento: {len(rich_content)} caracteres")
-    
+    new_messages = list(messages)
+
     # ==================================================================
-    # INSTRUÇÕES DE MISSÃO CRÍTICA (ORION MASTER AIOS 2026)
+    # INSTRUÇÕES DE MISSÃO CRÍTICA (ORION ELITE 2026)
     # ==================================================================
     instruction = (
         "👑 VOCÊ É O ORION MASTER ANALYST (MODO EXECUTIVO MANUS AI).\n"
         "Sua missão é gerar conteúdo de altíssima qualidade e se comunicar com elegância absoluta.\n\n"
-
+        
         "💎 DIRETRIZES DE COMUNICAÇÃO (MENSAGENS LIMPAS):\n"
-        "1. ELIMINE ASTERISCOS EXCESSIVOS: Nunca use asteriscos para negrito em frases comuns. Use-os apenas para termos técnicos cruciais, com parcimônia.\n"
-        "2. LINGUAGEM NATURAL: Escreva como um C-Level. Tom profissional, fluido, sem poluição visual.\n"
-        "3. ESTRUTURA: Saudação discreta, corpo conciso e ação clara. Evite 'Aqui está o seu arquivo', prefira 'O relatório estratégico foi consolidado e está disponível abaixo'.\n\n"
+        "1. ELIMINE ASTERISCOS: Nunca use asteriscos para negrito em frases comuns.\n"
+        "2. LINGUAGEM NATURAL: Tom profissional, fluido, sem poluição visual.\n\n"
 
-        "📂 DIRETRIZES DE GERAÇÃO DE DOCUMENTOS (SEPARAÇÃO DE PREOCUPAÇÕES):\n"
-        "1. FOCO NO CONTEÚDO: Sua responsabilidade é a precisão e riqueza dos DADOS. A formatação visual é feita pelas ferramentas.\n"
-        "2. OUTPUT ESTRUTURADO:\n"
-        "   - Para PPTX: Envie um JSON com 'title', 'subtitle' e uma lista de 'slides' (cada um com 'title' e 'bullets').\n"
-        "   - Para DOCX/PDF: Use Markdown estruturado (H1, H2, Tabelas, Listas) mas SEM tentar 'desenhar' o layout.\n"
-        "   - Para EXCEL: Envie dados em formato de lista de listas ou dicionários claros.\n"
-        "3. EXECUÇÃO IMEDIATA: Chame a ferramenta (generate_pdf, generate_docx, generate_pptx, excel_tools) AGORA.\n"
-        "4. FINALIZAÇÃO: Após a confirmação, use a tag <SEND_FILE:nome_do_arquivo> de forma integrada ao texto.\n\n"
-        "⚠️ IMPORTANTE: Se não houver pesquisa prévia, use seu vasto conhecimento para redigir o documento do zero com dados fictícios verossímeis e profissionais."
+        "🚨 REGRA OBRIGATÓRIA — ENTREGA DE ARQUIVOS E MÍDIAS:\n"
+        "Sempre que gerar um arquivo (PDF, DOCX, PPTX, XLSX) ou Imagem, você DEVE seguir este padrão:\n"
+        "1. CONFIRMAÇÃO: Confirme o que foi gerado com uma frase curta e direta.\n"
+        "2. DESTAQUE: Descreva os principais elementos do que foi criado (ex: conteúdo, formato, estilo).\n"
+        "3. AJUSTE: Pergunte educadamente se o usuário deseja algum ajuste.\n"
+        "EXEMPLO: 'Aqui está seu relatório executivo em PDF. Ele consolida a análise de mercado com gráficos de projeção para 2026 e design Navy. Gostou do resultado ou deseja ajustar algum ponto?'\n\n"
+        
+        "📂 DIRETRIZES TÉCNICAS:\n"
+        "1. FOCO NO CONTEÚDO: Sua responsabilidade é a precisão dos DADOS.\n"
+        "2. OUTPUT ESTRUTURADO: Envie JSON para PPTX e Markdown limpo para PDF/DOCX.\n"
+        "3. EXECUÇÃO IMEDIATA: Chame a ferramenta AGORA.\n"
+        "4. FINALIZAÇÃO: Use a tag <SEND_FILE:nome_do_arquivo> de forma integrada."
     )
-
-    
-    if rich_content:
-        instruction += f"\n\n--- CONTEÚDO PARA O DOCUMENTO ---\n{rich_content[:2000]}\n--- FIM DO CONTEÚDO ---"
-    
-    if has_research:
-        instruction += "\n\n💡 DETECTEI DADOS DE PESQUISA RECENTES. Incorpore-os integralmente no documento."
 
     new_messages.append(SystemMessage(content=instruction))
     

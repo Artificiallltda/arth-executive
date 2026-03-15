@@ -41,8 +41,9 @@ logger = logging.getLogger(__name__)
 # --- Setup dos Modelos (ORION ELITE V3 - GEMINI 3 SERIES) ---
 LLM_TIMEOUT = 90
 MAX_RETRIES = 3
+DEFAULT_TEMP = 0.5 # REDUZIDO PARA MAIOR CONSISTÊNCIA CONFORME DICA DO GEAN
 
-def get_gemini_model(model_name: str, temperature: float = 0):
+def get_gemini_model(model_name: str, temperature: float = DEFAULT_TEMP):
     return ChatGoogleGenerativeAI(
         model=model_name,
         temperature=temperature,
@@ -52,18 +53,18 @@ def get_gemini_model(model_name: str, temperature: float = 0):
         disable_search=True
     )
 
-# SUPERVISOR: Gemini 3 Pro (O melhor para decisões)
-supervisor_llm = get_gemini_model("gemini-3-pro-preview") 
+# SUPERVISOR: Gemini 3 Pro
+supervisor_llm = get_gemini_model("gemini-3-pro-preview", temperature=0.3) # Supervisor ainda mais preciso
 
-# EXECUTOR: Gemini 3 Flash (O mais rápido do mundo)
-executor_llm = get_gemini_model("gemini-3-flash-preview")
+# EXECUTOR: Gemini 3 Flash
+executor_llm = get_gemini_model("gemini-3-flash-preview", temperature=DEFAULT_TEMP)
 
-# DEEPSEEK: Mantido para tarefas de lógica pura
+# DEEPSEEK: Lógica pura
 deepseek_llm = ChatOpenAI(
     model="deepseek-chat",
     openai_api_key=settings.DEEPSEEK_API_KEY,
     openai_api_base="https://api.deepseek.com",
-    temperature=0.3,
+    temperature=DEFAULT_TEMP,
     max_retries=MAX_RETRIES,
     timeout=LLM_TIMEOUT
 )
